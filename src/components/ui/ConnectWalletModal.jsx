@@ -167,13 +167,13 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
         <>
             {/* Backdrop */}
             <div 
-                className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm transition-opacity" 
+                className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm transition-opacity" 
                 onClick={() => !connecting && onClose()} 
             />
 
             {/* Modal */}
             <div className="
-                fixed z-50
+                fixed z-40
                 bottom-0 left-0 right-0
                 lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-full lg:max-w-md
                 bg-white shadow-2xl rounded-t-2xl lg:rounded-2xl flex flex-col max-h-[90vh] overflow-hidden
