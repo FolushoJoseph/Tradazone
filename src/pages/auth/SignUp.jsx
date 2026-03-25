@@ -7,6 +7,19 @@ import illustration from '../../assets/auth-splash.svg';
 import Logo from '../../components/ui/Logo';
 import ConnectWalletModal from '../../components/ui/ConnectWalletModal';
 
+/**
+ * @coverage-note Critical logic in this component:
+ *   1. useEffect redirect — if `user.isAuthenticated` is true on mount (or
+ *      becomes true), the user is immediately redirected to `redirectTo`.
+ *      Prevents authenticated users from accessing the sign-up page.
+ *   2. handleConnectSuccess — called by ConnectWalletModal on a successful
+ *      wallet connection. Sets `tradazone_onboarded` to `'false'` in
+ *      localStorage (triggers WelcomeModal onboarding), fires the
+ *      `user.signed_up` webhook (non-blocking), then navigates to `redirectTo`.
+ *   3. Staging banner — rendered only when IS_STAGING is true; must carry
+ *      role="banner" and data-testid="staging-banner" for a11y and testing.
+ * Tests: src/test/SignUp.test.jsx
+ */
 function SignUp() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
