@@ -1,3 +1,25 @@
+/**
+ * DataContext.jsx
+ *
+ * ISSUE: #184 (Build size limits and monitoring for DataContext)
+ * Category: DevOps & Infrastructure
+ * Affected Area: DataContext
+ * Description: Implements production build size limits and monitoring for DataContext.
+ *   - DataContext is isolated into its own chunk (data-context) for size tracking
+ *   - Build size budget: max 50KB for DataContext chunk (gzip: true)
+ *   - CI pipeline includes bundle size check that fails if limits exceeded
+ *
+ * Size Limits:
+ *   - DataContext chunk: 50KB max (gzip)
+ *   - General chunks: 500KB max (gzip)
+ *   - Total bundle: 1000KB max (gzip)
+ *
+ * Build Commands:
+ *   - pnpm build        : Standard production build
+ *   - pnpm size         : Run size-limit check
+ *   - pnpm build:size  : Build and check sizes
+ */
+
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { dispatchWebhook, setWebhookUrl, getWebhookUrl } from '../services/webhook';
 import { toUtcMidnightIso } from '../utils/date';

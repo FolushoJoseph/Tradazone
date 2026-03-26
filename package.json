@@ -15,7 +15,9 @@
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "build:analyze": "npm run build && npx vite-bundle-analyzer dist"
+    "build:analyze": "npm run build && npx vite-bundle-analyzer dist",
+    "size": "size-limit",
+    "build:size": "npm run build && npm run size"
   },
   "dependencies": {
     "@lobstrco/signer-extension-api": "^2.0.0",
@@ -47,6 +49,7 @@
     "globals": "^16.5.0",
     "jsdom": "^29.0.1",
     "postcss": "^8.5.6",
+    "size-limit": "^11.1.6",
     "tailwindcss": "^3.4.19",
     "vite": "^7.2.4",
     "vitest": "^4.1.1"
