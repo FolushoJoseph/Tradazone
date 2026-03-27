@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { apiFetch, setUnauthorizedHandler } from '../services/api';
+import { apiFetch, setUnauthorizedHandler, paginate } from '../services/api';
 
 // ─── apiFetch ────────────────────────────────────────────────────────────────
 
@@ -34,6 +34,25 @@ describe("apiFetch", () => {
     });
   });
 
+  // BUG FIX #16: Verify non-JSON error responses are handled gracefully
+  it("falls back with status code when error response body is not valid JSON", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => { throw new Error("Unexpected token < in JSON"); },
+      })
+    );
+    await expect(apiFetch("/api/customers")).rejects.toMatchObject({
+      message: "API error 502",
+      status: 502,
+    });
+    expect(consoleSpy).toHaveBeenCalledOnce();
+    consoleSpy.mockRestore();
+  });
+
   it("calls the unauthorized handler on 401", async () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
@@ -55,6 +74,14 @@ describe("apiFetch", () => {
       error: "ERR_TOKEN_EXPIRED",
       status: 401,
     });
+  });
+
+  it("propagates network-level errors (DNS, CORS, timeout) to the caller", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Network request failed"))
+    );
+    await expect(apiFetch("/api/customers")).rejects.toThrow("Network request failed");
   });
 
   it("returns ERR_TOKEN_EXPIRED code on 401 for machine-readable UI handling", async () => {

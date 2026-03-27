@@ -98,14 +98,23 @@ export async function dispatchWebhook(event, payload) {
     try {
         const res = await fetch(url, options);
         return { ok: res.ok, status: res.status };
-    } catch {
+    } catch (err) {
+        // BUG FIX #16: Log the initial network error instead of silently swallowing it.
+        // Previously the empty catch block obscured DNS, CORS, and timeout failures.
+        console.error(
+            `[Webhook] Initial dispatch failed for event "${event}" to ${url}: ${err.message}`
+        );
+
         // Single retry after delay
         await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
         try {
             const res = await fetch(url, options);
             return { ok: res.ok, status: res.status };
-        } catch (err) {
-            return { ok: false, error: err.message };
+        } catch (retryErr) {
+            console.error(
+                `[Webhook] Retry also failed for event "${event}" to ${url}: ${retryErr.message}`
+            );
+            return { ok: false, error: retryErr.message };
         }
     }
 }

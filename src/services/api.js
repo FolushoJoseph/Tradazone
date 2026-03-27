@@ -107,15 +107,22 @@ async function apiFetch(url, options = {}) {
     }
 
 /**
- * FIXME (Resolved #15): Previously, an empty catch block on response.json()
- * obscured underlying network errors. Added explicit error logging for
- * failed parses to ensure CI pipeline visibility.
+ * BUG FIX #16: Empty catch block in API gateway obscured underlying network errors.
+ *
+ * - On 2xx: explicitly return parsed JSON (previously fell through with undefined).
+ * - On non-2xx: the .catch() on response.json() now logs the parse failure and
+ *   includes the HTTP status in the fallback body so callers and CI pipelines
+ *   can diagnose the root cause instead of receiving an opaque error.
+ * - Network-level failures (e.g. DNS, CORS, timeout) are caught by the outer
+ *   try/catch in callers or by the fetch rejection itself; this wrapper focuses
+ *   on HTTP-layer error propagation.
  */
     if (!response.ok) {
-            // ✅ FIX: Capture parsing error and provide context for CI/CD logs
             const body = await response.json().catch((parseError) => {
-                console.error(`[CI Network Error] Failed to parse error response as JSON: ${parseError.message}`);
-                return { message: `Underlying network/format error (Status: ${response.status})` };
+                console.error(
+                    `[API Gateway] Failed to parse error response as JSON (status ${response.status}): ${parseError.message}`
+                );
+                return { message: `API error ${response.status}` };
             });
 
             throw Object.assign(
@@ -123,6 +130,9 @@ async function apiFetch(url, options = {}) {
                 { status: response.status, body }
             );
     }
+
+    return await response.json();
+}
 
 // Expose for tests and future real-fetch migrations (not needed by mock callers)
 export { apiFetch };
@@ -149,15 +159,10 @@ const api = {
         },
         delete: async (id) => {
             await delay(500);
+            console.log("API Delete Customer:", id);
             return true;
-        }
+        },
     },
-    delete: async (id) => {
-      await delay(500);
-      console.log("API Delete Customer:", id);
-      return true;
-    },
-  },
 
     // Invoices
     invoices: {
@@ -172,9 +177,8 @@ const api = {
         create: async (data) => {
             await delay(800);
             return { id: `INV-${Date.now()}`, ...data };
-        }
+        },
     },
-  },
 
     // Checkouts
     checkouts: {
@@ -185,14 +189,8 @@ const api = {
         create: async (data) => {
             await delay(800);
             return { id: `CHK-${Date.now()}`, ...data };
-        }
+        },
     },
-    create: async (data) => {
-      await delay(800);
-      console.log("API Create Checkout:", data);
-      return { id: `CHK-${Date.now()}`, ...data };
-    },
-  },
 
     // Items
     items: {
@@ -204,6 +202,7 @@ const api = {
             await delay(800);
             return { id: Date.now().toString(), ...data };
         },
+    },
         delete: async (id) => {
             await delay(500);
             return true;

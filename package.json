@@ -5,6 +5,11 @@
   "homepage": "https://Blockora-dex.github.io/Tradazone",
   "type": "module",
   "size-limit": [
+     {
+      "path": "dist/assets/*.js",
+      "limit": "550 kB",
+      "gzip": true
+    },
     {
       "path": "dist/assets/index-*.js",
       "limit": "500 kB",
@@ -41,18 +46,6 @@
     "size": "size-limit",
     "build:size": "npm run build && npm run size"
   },
-  "size-limit": [
-    {
-      "path": "dist/assets/*.js",
-      "limit": "550 kB",
-      "gzip": true
-    },
-    {
-      "path": "dist/assets/data-context*.js",
-      "limit": "50 kB",
-      "gzip": true
-    }
-  ],
   "dependencies": {
     "@lobstrco/signer-extension-api": "^2.0.0",
     "chart.js": "^4.5.1",
