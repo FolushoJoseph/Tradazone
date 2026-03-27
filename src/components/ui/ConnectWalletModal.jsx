@@ -31,6 +31,14 @@ import { X, ExternalLink, AlertCircle, ChevronLeft } from 'lucide-react';
 import Logo from './Logo';
 import { useLobstr } from '../../hooks/useLobstr';
 import { useAuth } from '../../context/AuthContext';
+import { useVirtualList } from '../../hooks/useVirtualList';
+
+// ISSUE #70: Virtualization constants for the wallet list.
+// Wallets enter via EIP-6963 discovery and can be numerous; rendering every
+// item unconditionally causes layout thrash in large browser environments.
+const VIRTUALIZATION_THRESHOLD = 8;   // enable windowing above this count
+const WALLET_ROW_HEIGHT = 88;         // approx button height (76 px) + gap-3 (12 px)
+const WALLET_LIST_MAX_HEIGHT = 340;   // px — ~4 rows visible; remainder scrolls
 
 // ---------------------------------------------------------------------------
 // Type definitions (JSDoc interfaces)
@@ -166,31 +174,38 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
-
-    /**
-     * Filter and Sort logic
-     */
+    // ISSUE #70: Filter + sort must run before hooks so useVirtualList always
+    // receives the current list (React rules prohibit conditional hook calls).
     const filteredAndSortedWallets = availableWallets
         .filter(w => {
-            // Search filter
             if (searchQuery && !w.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-            // Network filter
             if (filterNetwork !== 'all' && w.network !== filterNetwork) return false;
-            // View filter (Primary vs Secondary)
             if (view === 'primary' && w.isSecondary && !searchQuery && filterNetwork === 'all') return false;
             if (view === 'secondary' && !w.isSecondary && !searchQuery && filterNetwork === 'all') return false;
             return true;
         })
         .sort((a, b) => {
-            // 1. Sort by installation status (Installed first)
             if (a.isInstalled && !b.isInstalled) return -1;
             if (!a.isInstalled && b.isInstalled) return 1;
-            // 2. Sort recommended first
             if (a.isRecommended && !b.isRecommended) return -1;
             if (!a.isRecommended && b.isRecommended) return 1;
             return 0;
         });
+
+    const shouldVirtualize = filteredAndSortedWallets.length > VIRTUALIZATION_THRESHOLD;
+
+    // Always call the hook — its result is only applied to the DOM when
+    // shouldVirtualize is true (React hooks must not be called conditionally).
+    const { scrollRef, virtualItems, topPadding, bottomPadding } = useVirtualList({
+        items: filteredAndSortedWallets,
+        itemHeight: WALLET_ROW_HEIGHT,
+    });
+
+    const walletsToRender = shouldVirtualize
+        ? virtualItems.map(v => v.item)
+        : filteredAndSortedWallets;
+
+    if (!isOpen) return null;
 
     /**
      * Maps wallet ID to the correct icon component.
@@ -333,56 +348,69 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
                             </div>
                         </div>
 
-                        <div className="flex flex-col gap-3">
-                            {filteredAndSortedWallets.map((w) => (
-                                <button
-                                    key={w.id}
-                                    onClick={() => handleConnect(w)}
-                                    disabled={connecting !== null || (w.id === 'stellar' && lobstrHook.isConnecting)}
-                                    className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all outline-none
-                                        ${connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? 'border-brand/40 bg-brand/5' : connecting !== null ? 'border-border/50 opacity-50' : 'border-border hover:border-brand/30 hover:bg-brand/5'}`}
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
-                                            ${w.network === 'stellar' ? 'bg-blue-50' : w.network === 'starknet' ? 'bg-[#FF875B]/10' : 'bg-gray-100'}`}>
-                                            {getWalletIcon(w)}
-                                        </div>
-                                        <div>
-                                            <div className="font-semibold text-t-primary flex items-center gap-2">
-                                                {w.name}
-                                                {w.isRecommended && (
-                                                    <span className="text-[10px] uppercase font-bold tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                                        Recommended
-                                                    </span>
-                                                )}
+                        {/* ISSUE #70 fix: wallet list with virtual scrolling.
+                            When the list exceeds VIRTUALIZATION_THRESHOLD items the
+                            container becomes a bounded scroll viewport; only the
+                            visible rows (plus overscan) are in the DOM. Top/bottom
+                            spacers preserve the correct total scroll height. */}
+                        <div
+                            ref={shouldVirtualize ? scrollRef : undefined}
+                            data-testid="wallet-list-container"
+                            style={shouldVirtualize ? { maxHeight: WALLET_LIST_MAX_HEIGHT, overflowY: 'auto' } : undefined}
+                        >
+                            {shouldVirtualize && <div style={{ height: topPadding }} aria-hidden="true" />}
+                            <div className="flex flex-col gap-3">
+                                {walletsToRender.map((w) => (
+                                    <button
+                                        key={w.id}
+                                        onClick={() => handleConnect(w)}
+                                        disabled={connecting !== null || (w.id === 'stellar' && lobstrHook.isConnecting)}
+                                        className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all outline-none
+                                            ${connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? 'border-brand/40 bg-brand/5' : connecting !== null ? 'border-border/50 opacity-50' : 'border-border hover:border-brand/30 hover:bg-brand/5'}`}
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0
+                                                ${w.network === 'stellar' ? 'bg-blue-50' : w.network === 'starknet' ? 'bg-[#FF875B]/10' : 'bg-gray-100'}`}>
+                                                {getWalletIcon(w)}
                                             </div>
-                                            <div className="text-xs text-t-muted">{w.networkName}</div>
+                                            <div>
+                                                <div className="font-semibold text-t-primary flex items-center gap-2">
+                                                    {w.name}
+                                                    {w.isRecommended && (
+                                                        <span className="text-[10px] uppercase font-bold tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                                            Recommended
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-t-muted">{w.networkName}</div>
+                                            </div>
                                         </div>
-                                    </div>
-                                    {connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? (
-                                        <span className="w-4 h-4 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
-                                    ) : (w.isInstalled || w.rdns) && (
-                                        <span className="text-[10px] uppercase font-bold tracking-wide text-green-600 bg-green-50 px-2 py-1 rounded-md">Installed</span>
-                                    )}
-                                </button>
-                            ))}
-
-                            {filteredAndSortedWallets.length === 0 && (
-                                <div className="text-center py-8 text-t-muted text-sm italic">
-                                    No wallets found matching your search.
-                                </div>
-                            )}
-
-                            {view === 'primary' && !searchQuery && filterNetwork === 'all' && (
-                                <button
-                                    onClick={() => setView('secondary')}
-                                    disabled={connecting !== null}
-                                    className="w-full mt-2 text-center text-sm font-semibold text-t-secondary hover:text-brand transition-colors p-3 rounded-lg border border-transparent hover:border-border hover:bg-gray-50 disabled:opacity-50"
-                                >
-                                    View more options
-                                </button>
-                            )}
+                                        {connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? (
+                                            <span className="w-4 h-4 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
+                                        ) : (w.isInstalled || w.rdns) && (
+                                            <span className="text-[10px] uppercase font-bold tracking-wide text-green-600 bg-green-50 px-2 py-1 rounded-md">Installed</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                            {shouldVirtualize && <div style={{ height: bottomPadding }} aria-hidden="true" />}
                         </div>
+
+                        {filteredAndSortedWallets.length === 0 && (
+                            <div className="text-center py-8 text-t-muted text-sm italic">
+                                No wallets found matching your search.
+                            </div>
+                        )}
+
+                        {view === 'primary' && !searchQuery && filterNetwork === 'all' && (
+                            <button
+                                onClick={() => setView('secondary')}
+                                disabled={connecting !== null}
+                                className="w-full mt-2 text-center text-sm font-semibold text-t-secondary hover:text-brand transition-colors p-3 rounded-lg border border-transparent hover:border-border hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                View more options
+                            </button>
+                        )}
 
                         {error?.code === 'not_installed' && (
                             <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-sm text-red-800 animate-fade-in">

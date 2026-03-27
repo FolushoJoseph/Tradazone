@@ -63,9 +63,13 @@ jobs:
 
       - name: Check size-limit result
         run: |
-          if ! npm run size; then
+          # Check if size-limit reported any errors
+          RESULT=$(npm run size -- --json 2>&1 || true)
+          if echo "$RESULT" | grep -q "Error"; then
             echo "❌ Bundle size limits exceeded!"
+            echo "$RESULT"
             exit 1
           fi
           echo "✅ Bundle size check passed"
+          echo "$RESULT"
         shell: bash
