@@ -66,6 +66,7 @@ function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const invoiceRef = useRef(null);
+  const pdfRef = useRef(null);
   const { user } = useAuth();
   const { invoices, customers } = useData();
 
@@ -99,7 +100,7 @@ function InvoiceDetail() {
 
   const handleDownload = async () => {
     const html2pdf = (await import("html2pdf.js")).default;
-    const element = invoiceRef.current;
+    const element = pdfRef.current || invoiceRef.current;
 
     const options = {
       margin: 0,
@@ -132,6 +133,18 @@ function InvoiceDetail() {
   const total = invoice.items.reduce(
     (acc, item) => acc + (parseFloat(item.price) || 0) * (Number(item.quantity) || 0),
     0
+  );
+
+  const pdfLayout = useMemo(
+    () => (
+      <InvoiceLayout
+        ref={pdfRef}
+        invoice={invoice}
+        customer={customer}
+        sender={user}
+      />
+    ),
+    [invoice, customer, user],
   );
 
   return (
@@ -175,6 +188,13 @@ function InvoiceDetail() {
       </div>
 
       <div ref={invoiceRef}>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none"
+          style={{ position: "absolute", left: "-10000px", top: 0 }}
+        >
+          {pdfLayout}
+        </div>
         <div className="bg-white border border-border rounded-card p-6 mb-5">
           <h2 className="text-base font-semibold mb-4">Invoice Details</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
