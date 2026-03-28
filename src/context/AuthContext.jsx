@@ -317,6 +317,13 @@ const EMPTY_USER = {
 };
 
 function normalizeUserData(userData = {}) {
+    /**
+     * Business rule: auth/profile writes may be partial or stale (e.g. legacy
+     * sessions, wallet-only payloads, or profile-only updates). We normalize to
+     * the full UserData contract and sanitize rich text so every caller (login,
+     * updateProfile, session restore, wallet-connect) persists a safe, stable
+     * shape.
+     */
     return {
         ...EMPTY_USER,
         ...userData,
@@ -401,6 +408,11 @@ export function AuthProvider({ children }) {
     });
 
     useEffect(() => {
+        /**
+         * Re-evaluates installed providers using both EIP-6963 discovery and
+         * legacy globals. Timed re-checks account for extensions that inject
+         * asynchronously after initial app bootstrap.
+         */
         const checkInstallations = () => {
             const eth = window.ethereum;
 
@@ -435,6 +447,12 @@ export function AuthProvider({ children }) {
      * Calculated as a memoized value to prevent unnecessary re-renders.
      */
     const availableWallets = useMemo(() => {
+        /**
+         * Stable curated entries keep wallet ordering and labels predictable for
+         * UI/tests; discovered EIP-6963 providers are appended to avoid duplicate
+         * first-party entries (MetaMask/Phantom/Base) when both static and
+         * discovered metadata exist.
+         */
         const staticWallets = [
             { id: 'stellar', name: 'LOBSTR', network: 'stellar', networkName: 'Stellar Network', isRecommended: true, isInstalled: installed.lobstr },
             { id: 'starknet', name: 'Argent', network: 'starknet', networkName: 'Starknet Network', isInstalled: installed.argent },
