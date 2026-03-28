@@ -26,7 +26,9 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Run snapshot tests
+      # Issue #156: Auth module snapshot tests (AuthComponents.snapshot.test.jsx)
+      # are picked up automatically by vitest alongside all other snapshot suites.
+      - name: Run snapshot tests (includes Auth module — Issue #156)
         run: npm test -- --reporter=verbose
 
 
