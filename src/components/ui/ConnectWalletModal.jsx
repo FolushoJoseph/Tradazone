@@ -32,6 +32,7 @@ import {
     useAuthActions,
     useAuthWalletCatalog,
     useAuthWalletState,
+    useAuthUser,
 } from '../../context/AuthContext';
 import { useVirtualList } from '../../hooks/useVirtualList';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
