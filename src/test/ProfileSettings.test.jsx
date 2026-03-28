@@ -66,4 +66,13 @@ describe('ProfileSettings', () => {
         });
         expect(screen.getByRole('status')).toHaveTextContent('Profile saved for this session.');
     });
+
+    it('renders the virtualized profile activity list', async () => {
+        await renderProfileSettings();
+
+        const activityRegion = screen.getByTestId('virtualized-profile-activity');
+        expect(activityRegion).toBeInTheDocument();
+
+        expect(activityRegion.textContent).toMatch(/updated profile field/i);
+    });
 });

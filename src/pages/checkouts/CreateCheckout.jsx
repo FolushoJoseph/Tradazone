@@ -3,13 +3,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Copy, Link as LinkIcon } from 'lucide-react';
 import Input from '../../components/forms/Input';
 import Button from '../../components/forms/Button';
-import { useData } from '../../context/DataContext';
+import { useCheckoutData } from '../../context/DataContext';
 import Logo from '../../components/ui/Logo';
 import { dispatchWebhook } from '../../services/webhook';
 
 function CreateCheckout() {
     const navigate = useNavigate();
-    const { addCheckout } = useData();
+    const { addCheckout } = useCheckoutData();
     const [formData, setFormData] = useState({ title: '', description: '', amount: '', currency: 'STRK' });
     const [errors, setErrors] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);

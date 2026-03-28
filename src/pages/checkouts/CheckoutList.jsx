@@ -2,13 +2,17 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, ShoppingCart } from 'lucide-react';
 import DataTable from '../../components/tables/DataTable';
 import StatusBadge from '../../components/tables/StatusBadge';
+
+// ISSUE #61: Checkout flow was subscribing to full DataContext, causing
+// excessive re-renders when unrelated customer/invoice state changed.
+// We now use a focused useCheckoutData hook for checkout-specific state.
 import EmptyState from '../../components/ui/EmptyState';
-import { useData } from '../../context/DataContext';
+import { useCheckoutData } from '../../context/DataContext';
 import { formatUtcDate } from '../../utils/date';
 
 function CheckoutList() {
     const navigate = useNavigate();
-    const { checkouts } = useData();
+    const { checkouts } = useCheckoutData();
 
     const columns = [
         { key: 'id', header: 'ID' },

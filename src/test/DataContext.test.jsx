@@ -369,3 +369,12 @@ describe('markCheckoutPaid', () => {
     expect(unchanged.totalSpent).toBe('0');
   });
 });
+
+describe('useCheckoutData', () => {
+  it('returns checkout-only context slice independently', () => {
+    const { result } = renderHook(() => useCheckoutData(), { wrapper });
+    expect(result.current.checkouts).toEqual([]);
+    expect(typeof result.current.addCheckout).toBe('function');
+    expect(typeof result.current.markCheckoutPaid).toBe('function');
+  });
+});

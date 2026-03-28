@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Wallet, Check } from 'lucide-react';
-import { useData } from '../../context/DataContext';
+import { useCheckoutData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import Logo from '../../components/ui/Logo';
 import ConnectWalletModal from '../../components/ui/ConnectWalletModal';
@@ -9,7 +9,7 @@ import { dispatchWebhook } from '../../services/webhook';
 
 function MailCheckout() {
     const { checkoutId } = useParams();
-    const { checkouts } = useData();
+    const { checkouts } = useCheckoutData();
     const checkout = checkouts.find(c => c.id === checkoutId) || {
         id: checkoutId || 'demo', title: 'Premium Package', description: 'Full service web development package', amount: '200', currency: 'STRK'
     };

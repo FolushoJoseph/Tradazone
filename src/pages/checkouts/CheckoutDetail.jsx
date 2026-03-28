@@ -2,13 +2,13 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Copy, Link as LinkIcon, Edit, Trash2, ExternalLink } from 'lucide-react';
 import Button from '../../components/forms/Button';
 import StatusBadge from '../../components/tables/StatusBadge';
-import { useData } from '../../context/DataContext';
+import { useCheckoutData } from '../../context/DataContext';
 import { formatUtcDate } from '../../utils/date';
 import LazyChart from '../../components/ui/LazyChart';
 
 function CheckoutDetail() {
     const { id } = useParams();
-    const { checkouts } = useData();
+    const { checkouts } = useCheckoutData();
     const checkout = checkouts.find(c => c.id === id);
 
     if (!checkout) return <div className="p-8"><p className="text-t-muted">Checkout not found</p></div>;
