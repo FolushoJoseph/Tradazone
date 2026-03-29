@@ -20,10 +20,19 @@
  * now persists an unauthenticated draft in localStorage and automatically
  * syncs it to the user's profile upon successful connection.
  *
+ * ISSUE: #124 (Advanced filtering and sorting in ConnectWalletModal)
+ * Category: Feature Enhancement
+ * Priority: High
+ * Affected Area: ConnectWalletModal
+ * Description: The wallet chooser now exposes explicit advanced filters and
+ * sorting controls so users can quickly narrow large provider lists to
+ * installed or recommended wallets and switch between alphabetical, network,
+ * or recommended-first ordering.
+ *
  * @module ConnectWalletModal
  */
 
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { X, ExternalLink, AlertCircle, ChevronLeft } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import Logo from './Logo';
@@ -32,6 +41,7 @@ import {
     useAuthActions,
     useAuthWalletCatalog,
     useAuthWalletState,
+    useAuthUser,
 } from '../../context/AuthContext';
 import { useVirtualList } from '../../hooks/useVirtualList';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -121,6 +131,9 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
     const [connecting, setConnecting] = useState(null);
     const [error, setError] = useState(null);
     const [filterNetwork, setFilterNetwork] = useState('all');
+    const [showInstalledOnly, setShowInstalledOnly] = useState(false);
+    const [showRecommendedOnly, setShowRecommendedOnly] = useState(false);
+    const [sortBy, setSortBy] = useState('recommended');
 
     /**
      * Search query for filtering wallets by name.
@@ -134,7 +147,7 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
 
     const { completeWalletLogin, disconnectAll, updateProfile } = useAuthActions();
     const { wallet } = useAuthWalletState();
-    const { user } = useAuthUser();
+    const user = useAuthUser();
     const { installed, availableWallets } = useAuthWalletCatalog();
     const lobstrHook = useLobstr();
 
@@ -152,6 +165,9 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
             setView('primary');
             setSearchQuery('');
             setFilterNetwork('all');
+            setShowInstalledOnly(false);
+            setShowRecommendedOnly(false);
+            setSortBy('recommended');
             
             // Sync draft with current user description if available
             if (user?.profileDescription) {
@@ -178,21 +194,42 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
 
     // #64: filter uses debouncedSearchQuery so rapid keystrokes don't trigger
     // a re-render of the wallet list on every character.
-    const filteredAndSortedWallets = availableWallets
-        .filter(w => {
+    const filteredAndSortedWallets = useMemo(() => availableWallets
+        .filter((w) => {
             if (debouncedSearchQuery && !w.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) return false;
             if (filterNetwork !== 'all' && w.network !== filterNetwork) return false;
+            if (showInstalledOnly && !w.isInstalled) return false;
+            if (showRecommendedOnly && !w.isRecommended) return false;
             if (view === 'primary' && w.isSecondary && !debouncedSearchQuery && filterNetwork === 'all') return false;
             if (view === 'secondary' && !w.isSecondary && !debouncedSearchQuery && filterNetwork === 'all') return false;
             return true;
         })
         .sort((a, b) => {
-            if (a.isInstalled && !b.isInstalled) return -1;
-            if (!a.isInstalled && b.isInstalled) return 1;
-            if (a.isRecommended && !b.isRecommended) return -1;
-            if (!a.isRecommended && b.isRecommended) return 1;
-            return 0;
-        });
+            const defaultPrioritySort = () => {
+                if (a.isInstalled && !b.isInstalled) return -1;
+                if (!a.isInstalled && b.isInstalled) return 1;
+                if (a.isRecommended && !b.isRecommended) return -1;
+                if (!a.isRecommended && b.isRecommended) return 1;
+                return a.name.localeCompare(b.name);
+            };
+
+            if (sortBy === 'alphabetical') return a.name.localeCompare(b.name);
+            if (sortBy === 'alphabetical_desc') return b.name.localeCompare(a.name);
+            if (sortBy === 'network') {
+                const networkSort = a.network.localeCompare(b.network);
+                return networkSort !== 0 ? networkSort : a.name.localeCompare(b.name);
+            }
+
+            return defaultPrioritySort();
+        }), [
+        availableWallets,
+        debouncedSearchQuery,
+        filterNetwork,
+        showInstalledOnly,
+        showRecommendedOnly,
+        sortBy,
+        view,
+    ]);
 
     const shouldVirtualize = filteredAndSortedWallets.length > VIRTUALIZATION_THRESHOLD;
     const { scrollRef, virtualItems, topPadding, bottomPadding } = useVirtualList({
@@ -282,6 +319,43 @@ function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
                                 {['all', 'stellar', 'starknet', 'evm'].map((net) => (
                                     <button key={net} onClick={() => setFilterNetwork(net)} className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-all ${filterNetwork === net ? 'bg-brand text-white shadow-md shadow-brand/20' : 'bg-gray-100 text-t-muted hover:bg-gray-200'}`}>{net}</button>
                                 ))}
+                            </div>
+                            <div className="rounded-xl border border-border bg-gray-50/70 p-3 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <label htmlFor="wallet-sort" className="text-xs font-semibold uppercase tracking-wide text-t-muted">
+                                        Sort wallets
+                                    </label>
+                                    <select
+                                        id="wallet-sort"
+                                        aria-label="Sort wallets"
+                                        value={sortBy}
+                                        onChange={(e) => setSortBy(e.target.value)}
+                                        className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-t-primary outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+                                    >
+                                        <option value="recommended">Recommended first</option>
+                                        <option value="alphabetical">Name A-Z</option>
+                                        <option value="alphabetical_desc">Name Z-A</option>
+                                        <option value="network">Network</option>
+                                    </select>
+                                </div>
+                                <div className="flex flex-wrap gap-3 text-sm text-t-primary">
+                                    <label className="inline-flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={showInstalledOnly}
+                                            onChange={(e) => setShowInstalledOnly(e.target.checked)}
+                                        />
+                                        Installed only
+                                    </label>
+                                    <label className="inline-flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={showRecommendedOnly}
+                                            onChange={(e) => setShowRecommendedOnly(e.target.checked)}
+                                        />
+                                        Recommended only
+                                    </label>
+                                </div>
                             </div>
                         </div>
 

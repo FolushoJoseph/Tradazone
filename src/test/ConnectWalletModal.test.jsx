@@ -7,13 +7,15 @@ import { MemoryRouter } from 'react-router-dom';
 
 const mockAvailableWallets = [
     { id: 'stellar', name: 'LOBSTR', network: 'stellar', networkName: 'Stellar Network', isRecommended: true, isInstalled: false },
-    { id: 'starknet', name: 'Argent', network: 'starknet', networkName: 'Starknet Network', isInstalled: false },
+    { id: 'starknet', name: 'Argent', network: 'starknet', networkName: 'Starknet Network', isInstalled: true },
     { id: 'metamask', name: 'MetaMask', network: 'evm', networkName: 'EVM Network', isInstalled: false },
+    { id: 'base', name: 'Base Account', network: 'evm', networkName: 'Smart Wallet / EVM', isRecommended: true, isInstalled: true },
 ];
 
 vi.mock('../context/AuthContext', () => ({
     useAuthActions: () => ({ completeWalletLogin: vi.fn(), disconnectAll: vi.fn() }),
     useAuthWalletState: () => ({ wallet: { isConnected: false } }),
+    useAuthUser: () => ({ profileDescription: '' }),
     useAuthWalletCatalog: () => ({
         installed: { discovered: [] },
         availableWallets: mockAvailableWallets,
@@ -77,6 +79,7 @@ describe('ConnectWalletModal search debounce (Issue #64)', () => {
         expect(screen.getByText('LOBSTR')).toBeTruthy();
         expect(screen.getByText('Argent')).toBeTruthy();
         expect(screen.getByText('MetaMask')).toBeTruthy();
+        expect(screen.getByText('Base Account')).toBeTruthy();
     });
 
     it('filters the wallet list after 300 ms have elapsed', async () => {
@@ -106,5 +109,45 @@ describe('ConnectWalletModal search debounce (Issue #64)', () => {
         expect(screen.getByText('LOBSTR')).toBeTruthy();
         expect(screen.getByText('Argent')).toBeTruthy();
         expect(screen.getByText('MetaMask')).toBeTruthy();
+        expect(screen.getByText('Base Account')).toBeTruthy();
+    });
+});
+
+describe('ConnectWalletModal advanced filters and sorting (Issue #124)', () => {
+    it('filters the list to installed wallets only', async () => {
+        await act(async () => { await renderModal(); });
+
+        fireEvent.click(screen.getByLabelText(/installed only/i));
+
+        expect(screen.getByText('Argent')).toBeTruthy();
+        expect(screen.getByText('Base Account')).toBeTruthy();
+        expect(screen.queryByText('LOBSTR')).toBeNull();
+        expect(screen.queryByText('MetaMask')).toBeNull();
+    });
+
+    it('filters the list to recommended wallets only', async () => {
+        await act(async () => { await renderModal(); });
+
+        fireEvent.click(screen.getByLabelText(/recommended only/i));
+
+        expect(screen.getByText('LOBSTR')).toBeTruthy();
+        expect(screen.getByText('Base Account')).toBeTruthy();
+        expect(screen.queryByText('Argent')).toBeNull();
+        expect(screen.queryByText('MetaMask')).toBeNull();
+    });
+
+    it('supports alphabetical sorting when selected', async () => {
+        await act(async () => { await renderModal(); });
+
+        fireEvent.change(screen.getByLabelText(/sort wallets/i), {
+            target: { value: 'alphabetical' },
+        });
+
+        const walletNames = screen.getAllByRole('button')
+            .map((button) => button.textContent)
+            .filter((text) => ['Argent', 'Base Account', 'LOBSTR', 'MetaMask'].some((name) => text?.includes(name)))
+            .map((text) => ['Argent', 'Base Account', 'LOBSTR', 'MetaMask'].find((name) => text.includes(name)));
+
+        expect(walletNames).toEqual(['Argent', 'Base Account', 'LOBSTR', 'MetaMask']);
     });
 });
