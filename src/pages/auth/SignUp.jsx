@@ -1,78 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Download } from "lucide-react";
 import { useAuthActions, useAuthUser } from "../../context/AuthContext";
 import { dispatchWebhook } from "../../services/webhook";
-import { IS_STAGING, APP_NAME } from "../../config/env";
+import { IS_STAGING, APP_NAME, STORAGE_PREFIX } from "../../config/env";
 import illustration from "../../assets/auth-splash.svg";
 import Logo from "../../components/ui/Logo";
 import ConnectWalletModal from "../../components/ui/ConnectWalletModal";
+import RichTextEditor from "../../components/forms/RichTextEditor";
+import { getPlainTextFromRichText, normalizeRichTextHtml } from "../../utils/richText";
 
-/**
- * SignUp.jsx
- *
- * ISSUE: CI pipeline lacks comprehensive linting job for SignUp
- * Category: DevOps & Infrastructure
- * Affected Area: SignUp
- * Status: RESOLVED âœ“
- *
- * Description:
- * The CI pipeline (deploy.yml) was missing a linting step in the test job.
- * Additionally, SignUp.jsx had an unused import (Link from react-router-dom)
- * that was causing linting errors.
- *
- * Resolution:
- * 1. Removed unused 'Link' import from SignUp.jsx (no longer used in component)
- * 2. Updated .github/workflows/deploy.yml to include 'npm run lint' in the test job
- *    BEFORE running tests (matching staging.yml pattern)
- * 3. Ensured SignUp.jsx passes ESLint with no warnings or errors
- *
- * CI Pipeline Changes:
- * - deploy.yml now runs linting early in the test job
- * - Linting runs on every push to main branch BEFORE building for production
- * - This ensures code quality standards are enforced consistently
- *
- * ISSUE: Implement 'Export to CSV' button on Auth module
- * Category: Feature Enhancement | Priority: Critical | Status: RESOLVED âœ“
- * Affected Files: SignIn.jsx, SignUp.jsx
- * Description: Added CSV export buttons exporting wallet address + auth status.
- * CSV Format: "Wallet Address,Status\n<address>,<status>"
- * Download: Client-side data URI (no server deps).
- * Testing: Manual verification - no regressions.
- *
- * @coverage-note Critical logic in this component:
- *   1. useEffect redirect â€” if `user.isAuthenticated` is true on mount (or
- *      becomes true), the user is immediately redirected to `redirectTo`.
- *      Prevents authenticated users from accessing the sign-up page.
- *   2. handleConnectSuccess â€” called by ConnectWalletModal on a successful
- *      wallet connection. Sets `tradazone_onboarded` to `'false'` in
- *      localStorage (triggers WelcomeModal onboarding), fires the
- *      `user.signed_up` webhook (non-blocking), then navigates to `redirectTo`.
- *   3. Staging banner â€” rendered only when IS_STAGING is true; must carry
- *      role="banner" and data-testid="staging-banner" for a11y and testing.
- *   4. handleExportToCSV â€” exports wallet address + signup status to CSV.
- * Tests: src/test/SignUp.test.jsx
- *
- * ISSUE: #57
- * Category: Performance & Scalability
- * Priority: Critical
- * Affected Area: SignUp
- * Description:
- * SignUp previously subscribed to the monolithic AuthContext just to read
- * `user` and `connectWallet`. That meant wallet discovery updates inside
- * AuthProvider invalidated the entire SignUp route on every catalog change.
- * The page now consumes narrow auth hooks so unrelated provider updates do not
- * force a full SignUp re-render.
- *
- * ISSUE: #129
- * Category: Feature Enhancement
- * Affected Area: SignUp
- * Description:
- * SignUp lacked an "Export to CSV" action, preventing users from exporting
- * their current connection snapshot. This adds a lightweight CSV export
- * button to align with SignIn and improve data portability.
- * Tests: src/test/SignUp.test.jsx
- */
+const SIGNUP_DESCRIPTION_DRAFT_KEY = `${STORAGE_PREFIX}_signup_description_draft`;
+
+function readDescriptionDraft(profileDescription = "") {
+  const savedDraft = localStorage.getItem(SIGNUP_DESCRIPTION_DRAFT_KEY) || "";
+  // Lightweight normalization ensures we don't start with broken HTML
+  return normalizeRichTextHtml(profileDescription || savedDraft);
+}
+
+function persistDescriptionDraft(value) {
+  const normalized = normalizeRichTextHtml(value);
+
+  if (normalized) {
+    localStorage.setItem(SIGNUP_DESCRIPTION_DRAFT_KEY, normalized);
+  } else {
+    localStorage.removeItem(SIGNUP_DESCRIPTION_DRAFT_KEY);
+  }
+
+  return normalized;
+}
+
 /**
  * SignUp page component - entry point for new users to connect their wallet.
  *
@@ -86,10 +43,14 @@ function SignUp() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const user = useAuthUser();
-  const { connectWallet } = useAuthActions();
+  const { connectWallet, updateProfile } = useAuthActions();
 
   /** @type {boolean} */
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [descriptionDraft, setDescriptionDraft] = useState(() =>
+    readDescriptionDraft(user?.profileDescription),
+  );
 
   /** @type {string} */
   const redirectTo = searchParams.get("redirect") || "/";
@@ -114,16 +75,28 @@ function SignUp() {
    * @param {string | null} walletAddress - Connected wallet address or null to use fallback
    * @param {string | null} walletType - Wallet type (e.g., 'evm', 'stellar') or null to use fallback
    */
-  const handleConnectSuccess = (walletAddress, walletType) => {
+  const handleConnectSuccess = useCallback((walletAddress, walletType) => {
     // Mark as first-time user so Onboarding/Welcome logic can trigger if needed
     localStorage.setItem("tradazone_onboarded", "false");
+
+    // Sync business description draft into the profile session
+    const normalizedDraft = persistDescriptionDraft(descriptionDraft);
+    if (normalizedDraft) {
+      updateProfile({ profileDescription: normalizedDraft });
+    }
+
     // Fire user.signed_up webhook (non-blocking)
     dispatchWebhook("user.signed_up", {
       walletAddress: walletAddress || user.walletAddress,
       walletType: walletType || user.walletType,
     });
     navigate(redirectTo, { replace: true });
-  };
+  }, [descriptionDraft, navigate, redirectTo, updateProfile, user.walletAddress, user.walletType]);
+
+  const handleDescriptionChange = useCallback((value) => {
+    const normalized = persistDescriptionDraft(value);
+    setDescriptionDraft(normalized);
+  }, []);
 
   /**
    * Exports current auth state to CSV file.
@@ -147,22 +120,24 @@ function SignUp() {
     document.body.removeChild(link);
   };
 
+  const hasDescriptionDraft = Boolean(getPlainTextFromRichText(descriptionDraft));
+
   return (
     <div className="min-h-screen flex flex-col">
-      {/* â”€â”€ Staging environment banner â”€â”€ */}
+      {/* ── Staging environment banner ── */}
       {IS_STAGING && (
         <div
           role="banner"
           data-testid="staging-banner"
           className="w-full bg-amber-400 text-amber-900 text-xs font-semibold text-center py-1.5 px-4"
         >
-          âš ï¸ {APP_NAME} â€” STAGING ENVIRONMENT. Data is not real and may be reset
+          ⚠️ {APP_NAME} — STAGING ENVIRONMENT. Data is not real and may be reset
           at any time.
         </div>
       )}
 
       <div className="flex flex-1">
-        {/* â”€â”€ Left Panel â”€â”€ */}
+        {/* ── Left Panel ── */}
         <div className="w-full lg:w-[40%] flex flex-col justify-start px-6 py-8 lg:px-10 lg:py-10 bg-white overflow-y-auto">
           {/* Logo */}
           <div className="mb-8 lg:mb-12">
@@ -176,6 +151,37 @@ function SignUp() {
           <p className="text-sm text-t-muted mb-8 lg:mb-10">
             Connect your wallet to get started
           </p>
+
+          <div className="mb-6 rounded-xl border border-border bg-gray-50/80 p-4">
+            <div className="mb-3">
+              <h2 className="text-sm font-semibold text-t-primary">
+                Business description draft
+              </h2>
+              <p className="text-xs text-t-muted">
+                Add formatted context about your business before you connect.
+                Tradazone keeps this draft on this device and syncs it into your
+                profile after your first successful wallet session.
+              </p>
+            </div>
+            {/* 
+                We use a lightweight custom RichTextEditor instead of a heavy library 
+                like Quill or Draft.js to keep the initial auth bundle small.
+                Security: Content is sanitized via normalizeRichTextHtml before persistence.
+            */}
+            <RichTextEditor
+              id="signup-business-description"
+              label="Business Description"
+              value={descriptionDraft}
+              onChange={handleDescriptionChange}
+              placeholder="Describe your business, products, or services before connecting..."
+              hint="Supports bold, italic, and bullet lists. The draft is sanitized for security."
+            />
+            {hasDescriptionDraft && (
+              <p className="mt-3 text-xs font-medium text-brand">
+                Your latest description draft will be attached to your new profile.
+              </p>
+            )}
+          </div>
 
           {/* Connect Wallet Button */}
           <button
@@ -203,11 +209,11 @@ function SignUp() {
           />
         </div>
 
-        {/* â”€â”€ Right Panel â€” Illustration â”€â”€ */}
+        {/* ── Right Panel — Illustration ── */}
         <div className="hidden lg:block lg:w-[60%] bg-gray-50 relative overflow-hidden">
           <img
             src={illustration}
-            alt="Tradazone â€” invoices, payments, crypto"
+            alt="Tradazone — invoices, payments, crypto"
             className="absolute inset-0 w-full h-full object-cover"
           />
         </div>
