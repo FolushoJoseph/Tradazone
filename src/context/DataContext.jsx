@@ -287,6 +287,31 @@ export function DataProvider({ children }) {
     [checkouts],
   );
 
+  const recordCheckoutView = useCallback(
+    (checkoutId) => {
+      const target = checkouts.find((c) => c.id === checkoutId);
+      if (!target) return;
+
+      const nextViews = (target.views || 0) + 1;
+      setCheckouts((prev) => {
+        const next = prev.map((c) =>
+          c.id === checkoutId ? { ...c, views: nextViews } : c,
+        );
+        save(KEYS.checkouts, next);
+        return next;
+      });
+
+      dispatchWebhook('checkout.viewed', {
+        id: target.id,
+        title: target.title,
+        amount: target.amount,
+        currency: target.currency,
+        views: nextViews,
+      });
+    },
+    [checkouts],
+  );
+
   const dataContextValue = useMemo(
     () => ({
       customers,
@@ -299,6 +324,7 @@ export function DataProvider({ children }) {
       addInvoice,
       addCheckout,
       markCheckoutPaid,
+      recordCheckoutView,
       updateCustomerDescription,
     }),
     [
@@ -312,13 +338,14 @@ export function DataProvider({ children }) {
       addInvoice,
       addCheckout,
       markCheckoutPaid,
+      recordCheckoutView,
       updateCustomerDescription,
     ],
   );
 
   const checkoutContextValue = useMemo(
-    () => ({ checkouts, addCheckout, markCheckoutPaid }),
-    [checkouts, addCheckout, markCheckoutPaid],
+    () => ({ checkouts, addCheckout, markCheckoutPaid, recordCheckoutView }),
+    [checkouts, addCheckout, markCheckoutPaid, recordCheckoutView],
   );
 
   return (
