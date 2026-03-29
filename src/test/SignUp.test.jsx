@@ -8,6 +8,7 @@ let mockSearchParams;
 let mockUser;
 let mockOnConnectArgs;
 const mockConnectWallet = vi.fn();
+const mockUpdateProfile = vi.fn();
 const mockDispatchWebhook = vi.fn().mockResolvedValue({ ok: true });
 
 vi.mock('react-router-dom', async () => {
@@ -19,6 +20,19 @@ vi.mock('react-router-dom', async () => {
         useSearchParams: () => [mockSearchParams],
     };
 });
+
+vi.mock('../components/forms/RichTextEditor', () => ({
+    default: ({ value, onChange, label }) => (
+        <div data-testid="mock-rte">
+            <label>{label}</label>
+            <textarea
+                data-testid="mock-rte-textarea"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+            />
+        </div>
+    ),
+}));
 
 vi.mock('../components/ui/Logo', () => ({
     default: () => React.createElement('div', { 'data-testid': 'logo' }),
@@ -33,10 +47,11 @@ vi.mock('../services/webhook', () => ({
 vi.mock('../config/env', () => ({
     IS_STAGING: false,
     APP_NAME: 'Tradazone',
+    STORAGE_PREFIX: 'tradazone',
 }));
 
 vi.mock('../context/AuthContext', () => ({
-    useAuthActions: () => ({ connectWallet: mockConnectWallet }),
+    useAuthActions: () => ({ connectWallet: mockConnectWallet, updateProfile: mockUpdateProfile }),
     useAuthUser: () => mockUser,
 }));
 
@@ -150,5 +165,27 @@ describe('SignUp', () => {
             walletAddress: '0xFALLBACK',
             walletType: 'stellar',
         });
+    });
+
+    it('persists a business description draft and syncs it after successful login', async () => {
+        const user = userEvent.setup();
+        await renderSignUp();
+
+        const rte = screen.getByTestId('mock-rte-textarea');
+        await user.type(rte, 'TestDescription');
+
+        // Check localStorage persistence
+        expect(localStorage.getItem('tradazone_signup_description_draft')).toContain('TestDescription');
+
+        // Simulate successful connection
+        await user.click(screen.getByText('Connect Wallet'));
+        await user.click(screen.getByTestId('mock-connect-success'));
+
+        // Verify profile update
+        expect(mockUpdateProfile).toHaveBeenCalledWith({
+            profileDescription: expect.stringContaining('TestDescription')
+        });
+
+        expect(mockNavigate).toHaveBeenCalled();
     });
 });

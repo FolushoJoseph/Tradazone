@@ -148,6 +148,24 @@ function DataTable({
     }
   };
 
+  const isAllSelected = rawData.length > 0 && selectedItems.length === rawData.length;
+
+  const handleSelectItem = useCallback(
+    (event, id) => {
+      event.stopPropagation();
+
+  // Always call the hook (React rules prohibit conditional hook calls)
+  const { scrollRef, virtualItems, topPadding, bottomPadding } = useVirtualList(
+    {
+      items: filteredData,
+      itemHeight: ROW_HEIGHT,
+    },
+  );
+
+  const rowsToRender = shouldVirtualize
+    ? virtualItems.map((v) => ({ ...v.item, _virtualIndex: v.index }))
+    : filteredData.map((item, index) => ({ ...item, _virtualIndex: index }));
+
   return (
     <div
       className={`bg-white border border-border rounded-card overflow-hidden dark:bg-zinc-950 dark:border-zinc-800 transition-colors ${className}`}
@@ -156,7 +174,11 @@ function DataTable({
       <div
         ref={shouldVirtualize ? scrollRef : undefined}
         className="overflow-x-auto -webkit-overflow-scrolling-touch"
-        style={shouldVirtualize ? { maxHeight: "600px", overflowY: "auto" } : undefined}
+        style={
+          shouldVirtualize
+            ? { maxHeight: "600px", overflowY: "auto" }
+            : undefined
+        }
       >
         <table className="w-full border-collapse min-w-[600px]">
           <thead className="sticky top-0 z-10">
@@ -189,13 +211,10 @@ function DataTable({
                 <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ height: topPadding }} />
               </tr>
             )}
-
+            
             {filteredData.length === 0 ? (
               <tr>
-                <td
-                  colSpan={columns.length + (selectable ? 1 : 0)}
-                  className="text-center py-10 text-t-muted dark:text-zinc-600"
-                >
+                <td colSpan={columns.length + (selectable ? 1 : 0)} className="text-center py-10 text-t-muted dark:text-zinc-600">
                   {emptyMessage}
                 </td>
               </tr>
@@ -229,7 +248,7 @@ function DataTable({
                 </tr>
               ))
             )}
-
+            
             {shouldVirtualize && bottomPadding > 0 && (
               <tr aria-hidden="true">
                 <td colSpan={columns.length + (selectable ? 1 : 0)} style={{ height: bottomPadding }} />
