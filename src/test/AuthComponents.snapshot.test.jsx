@@ -23,7 +23,9 @@ vi.mock('../context/AuthContext', () => ({
         lastWallet: null,
     }),
     useAuthUser: () => ({ isAuthenticated: false, walletAddress: null }),
-    useAuthActions: () => ({ connectWallet: vi.fn() }),
+    useAuthActions: () => ({ connectWallet: vi.fn(), updateProfile: vi.fn() }),
+    useAuthIsAuthenticated: () => false,
+    useAuthWalletState: () => ({ lastWallet: null }),
 }));
 
 vi.mock('../components/ui/ConnectWalletModal', () => ({
