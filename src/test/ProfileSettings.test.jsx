@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
+import { normalizeRichTextHtml } from '../utils/richText';
 
 let mockUser;
 const mockUpdateProfile = vi.fn();
@@ -74,5 +75,52 @@ describe('ProfileSettings', () => {
         expect(activityRegion).toBeInTheDocument();
 
         expect(activityRegion.textContent).toMatch(/updated profile field/i);
+    });
+
+    it('sanitizes malicious profile description before rendering in ProfileSettings', async () => {
+        mockUser.profileDescription = [
+            '<script>alert(1)</script>',
+            '<img src=x onerror=alert(1)>',
+            '<a href="javascript:alert(1)">click</a>',
+            '<div onclick="alert(1)">test</div>',
+        ].join('');
+
+        await renderProfileSettings();
+
+        const editor = screen.getByRole('textbox', { name: /business description/i });
+
+        expect(editor.querySelector('script')).toBeNull();
+        expect(editor.querySelector('img')).toBeNull();
+        expect(editor.querySelector('a')).toBeNull();
+        expect(editor.querySelector('[onclick]')).toBeNull();
+        expect(editor.querySelector('[onerror]')).toBeNull();
+        expect(editor.innerHTML).not.toMatch(/javascript:/i);
+        expect(editor.textContent).toContain('click');
+        expect(editor.textContent).toContain('test');
+    });
+
+    it('sanitizes malicious description payload before save', async () => {
+        const user = userEvent.setup();
+        const malicious = [
+            '<script>alert(1)</script>',
+            '<img src=x onerror=alert(1)>',
+            '<a href="javascript:alert(1)">click</a>',
+            '<div onclick="alert(1)">test</div>',
+            '<p>Safe <strong>content</strong></p>',
+        ].join('');
+
+        await renderProfileSettings();
+
+        const editor = screen.getByRole('textbox', { name: /business description/i });
+        editor.innerHTML = malicious;
+        fireEvent.input(editor);
+
+        await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+        expect(mockUpdateProfile).toHaveBeenCalledWith(
+            expect.objectContaining({
+                profileDescription: normalizeRichTextHtml(malicious),
+            }),
+        );
     });
 });

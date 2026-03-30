@@ -24,6 +24,12 @@ function unwrapElement(element) {
     parent.removeChild(element);
 }
 
+function moveChildren(source, target) {
+    while (source.firstChild) {
+        target.appendChild(source.firstChild);
+    }
+}
+
 function sanitizeNodeTree(root, doc) {
     Array.from(root.childNodes).forEach((node) => {
         if (node.nodeType === COMMENT_NODE) {
@@ -50,14 +56,14 @@ function sanitizeNodeTree(root, doc) {
 
         if (tagName === 'B') {
             const strong = doc.createElement('strong');
-            strong.innerHTML = node.innerHTML;
+            moveChildren(node, strong);
             node.replaceWith(strong);
             return;
         }
 
         if (tagName === 'I') {
             const emphasis = doc.createElement('em');
-            emphasis.innerHTML = node.innerHTML;
+            moveChildren(node, emphasis);
             node.replaceWith(emphasis);
             return;
         }

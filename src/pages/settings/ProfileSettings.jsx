@@ -7,6 +7,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import StagingBanner from '../../components/ui/StagingBanner';
 import { useAuthActions, useAuthUser } from '../../context/AuthContext';
 import { useVirtualList } from '../../hooks/useVirtualList';
+import { normalizeRichTextHtml } from '../../utils/richText';
 
 // ISSUE #67: Excessive context API updates in ProfileSettings cause full
 // application re-renders.
@@ -33,7 +34,7 @@ function getFormDataFromUser(user) {
         phone: user?.phone || '',
         company: user?.company || '',
         address: user?.address || '',
-        profileDescription: user?.profileDescription || '',
+        profileDescription: normalizeRichTextHtml(user?.profileDescription || ''),
     };
 }
 
@@ -84,7 +85,7 @@ function ProfileSettings() {
     }, [saveMessage]);
 
     const handleDescriptionChange = useCallback((value) => {
-        setFormData((current) => ({ ...current, profileDescription: value }));
+        setFormData((current) => ({ ...current, profileDescription: normalizeRichTextHtml(value) }));
         if (saveMessage) setSaveMessage('');
     }, [saveMessage]);
 
@@ -96,7 +97,10 @@ function ProfileSettings() {
             return;
         }
 
-        updateProfile(formData);
+        updateProfile({
+            ...formData,
+            profileDescription: normalizeRichTextHtml(formData.profileDescription),
+        });
         setSaveMessage('Profile saved for this session.');
     };
 
@@ -134,6 +138,11 @@ function ProfileSettings() {
                     <Input label="Company Name" placeholder="Enter company name" value={formData.company} onChange={handleChange('company')} />
                 </div>
                 <Input label="Business Address" placeholder="Enter your business address" value={formData.address} onChange={handleChange('address')} />
+                {/*
+                    ISSUE #100 (XSS): profileDescription is user-controlled rich text.
+                    Normalize it again at this render/save boundary so payloads are sanitized
+                    before reaching contentEditable innerHTML and before persistence.
+                */}
                 <RichTextEditor
                     id="business-description"
                     label="Business Description"
