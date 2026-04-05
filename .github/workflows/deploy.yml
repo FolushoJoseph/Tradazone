@@ -35,7 +35,7 @@ jobs:
         id: test-selection
         run: |
           # Use CI filtering utilities to select relevant tests
-          npm run ci:select > ci-selection.json || echo '{"tests": [], "count": 0}' > ci-selection.json
+          npm run --silent ci:select > ci-selection.json || echo '{"tests": [], "count": 0}' > ci-selection.json
           
           # Extract test files and count
           TEST_FILES=$(node -e "const data = require('./ci-selection.json'); console.log(data.tests.join(' ') || '')")

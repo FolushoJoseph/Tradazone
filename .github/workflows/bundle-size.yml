@@ -37,7 +37,7 @@ jobs:
           # Use CI utilities to identify tests related to bundle changes
           node -e "
             const Utils = require('./scripts/ci-pipeline-utils.js');
-            const utils = new Utils();
+            const utils = new Utils.default();
             
             const allTests = utils.discoverTestFiles();
             const changed = utils.getChangedFiles('main');
@@ -57,7 +57,7 @@ jobs:
             console.log('  Performance-related tests: ' + perfTests.length);
           "
           
-          AFFECTED_TESTS=$(node -e "const Utils = require('./scripts/ci-pipeline-utils.js'); const utils = new Utils(); const all = utils.discoverTestFiles(); const ch = utils.getChangedFiles('main'); const aff = utils.filterByChangedFiles(all, ch); console.log(aff.join(' '))")
+          AFFECTED_TESTS=$(node -e "const Utils = require('./scripts/ci-pipeline-utils.js'); const utils = new Utils.default(); const all = utils.discoverTestFiles(); const ch = utils.getChangedFiles('main'); const aff = utils.filterByChangedFiles(all, ch); console.log(aff.join(' '))")
           echo "affected-tests=${AFFECTED_TESTS}" >> $GITHUB_OUTPUT
 
   size-check:
