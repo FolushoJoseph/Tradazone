@@ -27,6 +27,7 @@
     - [Pagination Boundary Contract (`paginate`)](#pagination-boundary-contract-paginate)
     - [Context mutations — integration tests (#145)](#context-mutations--integration-tests-145)
     - [Modifying `ProfileSettings`](#modifying-profilesettings)
+    - [Modifying `ConnectWalletModal`](#modifying-connectwalletmodal)
   - [🔐 Dependency Security](#-dependency-security)
   - [🔄 Dependency Management](#-dependency-management)
   - [🤝 Contributing](#-contributing)
@@ -368,6 +369,35 @@ Manual test checklist after edits:
 - Navigate to Settings > Profile and confirm existing user name/email are prefilled.
 - Edit each field and verify updates are reflected in local component state.
 - Submit and verify there are no runtime errors in the browser console.
+
+### Modifying `ConnectWalletModal`
+`ConnectWalletModal` lives in `src/components/ui/ConnectWalletModal.jsx` and handles the wallet connection UI flow used across the entire application (sign up, sign in, payment checkout flows). It depends on:
+- `useAuth()` from `src/context/AuthContext.jsx` (for all wallet connection methods: `connectStellarWallet`, `connectStarknetWallet`, `connectEvmWallet`)
+- `useState()` for managing modal open/closed state and loading indicators during connection attempts
+- Reusable UI components: `Modal`, `Button`, and wallet provider logos from `src/assets/`
+
+Recommended local workflow before editing:
+```bash
+# Start dev server
+npm run dev
+
+# Optional quality checks before pushing
+npm run lint
+npm run build
+```
+
+Implementation notes:
+- The modal is triggered via the `isOpen` prop and closed via the `onClose` callback prop; avoid modifying these core props unless you are updating integration with parent components.
+- Each wallet provider button is grouped by chain (Stellar, Starknet, EVM) in the modal body. To add a new provider, follow the steps in the [Adding New Wallet Providers](#adding-new-wallet-providers) section first, then add the corresponding button in this component.
+- Connection error messages are displayed at the bottom of the modal via the `error` state; ensure all connection errors are passed through to this state to give users clear feedback.
+- Mobile responsiveness is handled via Tailwind breakpoints; test both desktop and mobile views after making layout changes.
+
+Manual test checklist after edits:
+1. Trigger the modal from the Sign Up page: confirm it opens without errors.
+2. Attempt to connect each supported wallet type: verify connection flows work as expected and errors are displayed correctly for failed connections.
+3. Trigger the modal from a checkout page: confirm it behaves identically to the sign up flow.
+4. Close the modal via the X button and via clicking outside the modal: verify both methods work.
+5. Test on mobile viewport: confirm all buttons are tappable and layout does not overflow.
 
 ---
 
