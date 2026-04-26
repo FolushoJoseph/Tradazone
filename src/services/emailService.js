@@ -7,9 +7,10 @@ const TEMPLATE_RECEIPT = import.meta.env.VITE_EMAILJS_TEMPLATE_RECEIPT;
 
 let _initialized = false;
 
+// @emailjs/browser v4 requires { publicKey } object — v3 string form no longer works
 function ensureInit() {
     if (!_initialized && PUBLIC_KEY) {
-        emailjs.init(PUBLIC_KEY);
+        emailjs.init({ publicKey: PUBLIC_KEY });
         _initialized = true;
     }
 }
@@ -18,22 +19,28 @@ async function sendWithRetry(templateId, params, maxRetries = 2) {
     ensureInit();
 
     if (!SERVICE_ID || !PUBLIC_KEY || !templateId) {
-        return { success: false, error: 'EmailJS not configured. Set VITE_EMAILJS_* env vars.' };
+        const msg = 'EmailJS not configured — set VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_PUBLIC_KEY, and template IDs in your .env.local file.';
+        console.error('[emailService]', msg, { SERVICE_ID: !!SERVICE_ID, PUBLIC_KEY: !!PUBLIC_KEY, templateId });
+        return { success: false, error: msg };
     }
 
     let lastError;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            await emailjs.send(SERVICE_ID, templateId, params);
+            // Pass publicKey as 4th arg (v4 belt-and-suspenders — works with or without init)
+            await emailjs.send(SERVICE_ID, templateId, params, { publicKey: PUBLIC_KEY });
+            console.info('[emailService] sent', templateId, 'to', params.to_email);
             return { success: true };
         } catch (err) {
             lastError = err;
+            console.error(`[emailService] attempt ${attempt + 1} failed:`, err?.text || err?.message || err);
             if (attempt < maxRetries) {
                 await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
             }
         }
     }
-    return { success: false, error: lastError?.text || lastError?.message || 'Email send failed' };
+    const errorText = lastError?.text || lastError?.message || String(lastError) || 'Email send failed';
+    return { success: false, error: errorText };
 }
 
 // Send invoice to customer with payment link

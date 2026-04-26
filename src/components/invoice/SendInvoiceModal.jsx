@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Send, CheckCircle, AlertCircle, Mail } from 'lucide-react';
+import { X, Send, CheckCircle, AlertCircle, Mail, Copy, ExternalLink } from 'lucide-react';
 import Button from '../forms/Button';
 import Input from '../forms/Input';
 import { useData } from '../../context/DataContext';
@@ -18,6 +18,7 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
     const [senderEmail, setSenderEmail] = useState(user?.email || '');
     const [phase, setPhase] = useState('idle'); // idle | loading | success | error
     const [errorMsg, setErrorMsg] = useState('');
+    const [invoicePaymentLink, setInvoicePaymentLink] = useState('');
 
     if (!isOpen) return null;
 
@@ -41,6 +42,7 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
             paymentAddress: wallet.address,
             walletType,
         });
+        setInvoicePaymentLink(enriched.paymentLink || '');
 
         // Apply emails that may have been provided by the user in the form
         const invoiceForEmail = {
@@ -55,18 +57,21 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
             sendInvoiceConfirmationToSender(invoiceForEmail),
         ]);
 
-        const customerResult = toCustomer.status === 'fulfilled' ? toCustomer.value : { success: false };
-        const senderResult = toSender.status === 'fulfilled' ? toSender.value : { success: false };
+        const customerResult = toCustomer.status === 'fulfilled' ? toCustomer.value : { success: false, error: toCustomer.reason?.message };
+        const senderResult = toSender.status === 'fulfilled' ? toSender.value : { success: false, error: toSender.reason?.message };
 
         // 3. Log email status back into the invoice
         const emailStatus = customerResult.success ? 'sent' : 'failed';
         updateInvoice(invoice.id, { emailStatus, customerEmail, senderEmail });
 
-        if (!customerResult.success && !senderResult.success) {
-            // Emails failed but invoice is still marked sent — inform the user
+        // Customer email is the critical one — surface any failure immediately
+        if (!customerResult.success) {
+            const rawError = customerResult.error || '';
+            const isNotConfigured = rawError.toLowerCase().includes('not configured') || rawError.toLowerCase().includes('env');
             setErrorMsg(
-                customerResult.error ||
-                'Email delivery failed (EmailJS not configured). Invoice is marked as sent and the payment link is live.'
+                isNotConfigured
+                    ? rawError
+                    : `Email delivery failed: "${rawError}". Check your EmailJS service ID, template ID, and that your template's "To Email" field uses {{to_email}}.`
             );
             setPhase('error');
             return;
@@ -79,6 +84,7 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
         if (isLoading) return;
         setPhase('idle');
         setErrorMsg('');
+        setInvoicePaymentLink('');
         onClose();
     }
 
@@ -127,18 +133,34 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
                     <div className="p-6">
                         {isSuccess ? (
                             /* ── Success state ── */
-                            <div className="flex flex-col items-center gap-4 py-4 text-center">
-                                <div className="w-14 h-14 bg-success-bg flex items-center justify-center">
-                                    <CheckCircle size={28} className="text-success" />
+                            <div className="flex flex-col gap-4 py-2">
+                                <div className="flex flex-col items-center gap-3 text-center">
+                                    <div className="w-14 h-14 bg-success-bg flex items-center justify-center">
+                                        <CheckCircle size={28} className="text-success" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-semibold text-t-primary mb-1">Invoice Sent</h3>
+                                        <p className="text-sm text-t-muted">
+                                            {invoice.id} was emailed to <strong>{customerEmail}</strong>.
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-base font-semibold text-t-primary mb-1">Invoice Sent</h3>
-                                    <p className="text-sm text-t-muted">
-                                        {invoice.id} has been emailed to <strong>{customerEmail}</strong> with
-                                        a payment link. Status updated to <em>Sent</em>.
-                                    </p>
-                                </div>
-                                <Button variant="primary" onClick={handleClose} className="w-full mt-2">Done</Button>
+                                {/* Payment link fallback — always visible so it can be copy-pasted */}
+                                {invoicePaymentLink && (
+                                    <div className="bg-page border border-border p-3">
+                                        <p className="text-xs text-t-muted mb-1.5">Payment link (share manually if needed)</p>
+                                        <div className="flex items-stretch gap-0 border border-border">
+                                            <span className="flex-1 px-2 py-1.5 text-xs font-mono text-t-primary bg-white truncate">{invoicePaymentLink}</span>
+                                            <button
+                                                onClick={() => navigator.clipboard.writeText(invoicePaymentLink)}
+                                                className="px-2.5 border-l border-border text-t-muted hover:text-brand bg-page transition-colors"
+                                            >
+                                                <Copy size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                <Button variant="primary" onClick={handleClose} className="w-full">Done</Button>
                             </div>
                         ) : (
                             /* ── Form ── */
@@ -195,9 +217,26 @@ function SendInvoiceModal({ isOpen, onClose, invoice, customer, user, wallet, wa
 
                                 {/* Error banner */}
                                 {(isError || errorMsg) && (
-                                    <div className="mt-4 p-3 bg-error-bg border border-error/20 flex items-start gap-2 text-sm text-error">
-                                        <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-                                        <span>{errorMsg || 'Something went wrong. Please try again.'}</span>
+                                    <div className="mt-4 flex flex-col gap-2">
+                                        <div className="p-3 bg-error-bg border border-error/20 flex items-start gap-2 text-sm text-error">
+                                            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                                            <span>{errorMsg || 'Something went wrong. Please try again.'}</span>
+                                        </div>
+                                        {/* Show payment link so merchant can share it manually */}
+                                        {invoicePaymentLink && (
+                                            <div className="p-3 bg-page border border-border text-xs">
+                                                <p className="text-t-muted mb-1">Invoice is marked as Sent. Share this payment link manually:</p>
+                                                <div className="flex items-stretch gap-0 border border-border">
+                                                    <span className="flex-1 px-2 py-1.5 font-mono text-t-primary bg-white truncate">{invoicePaymentLink}</span>
+                                                    <button
+                                                        onClick={() => navigator.clipboard.writeText(invoicePaymentLink)}
+                                                        className="px-2.5 border-l border-border text-t-muted hover:text-brand bg-page transition-colors"
+                                                    >
+                                                        <Copy size={13} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
