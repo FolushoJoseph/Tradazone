@@ -80,7 +80,7 @@ const InvoiceLayout = memo(forwardRef(function InvoiceLayout({ invoice, customer
             <div className="mt-auto">
                 <InvoiceFooter
                     notes={sender?.name || 'Sender'}
-                    paymentLink={`https://pay.tradazone.com/${invoice.id}`}
+                    paymentLink={`${window.location.origin}/Tradazone/pay/invoice/${invoice.id}`}
                 />
             </div>
         </div>

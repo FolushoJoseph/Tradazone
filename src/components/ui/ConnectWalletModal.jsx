@@ -1,88 +1,14 @@
-/**
- * ISSUE: #SEC-01 (Sensitive data exposure via raw error messages)
- * Category: Security & Compliance
- * Priority: Low
- * Affected Area: ConnectWalletModal
- * Description: Raw wallet provider error messages (e.g. e.message, result.error)
- * were being stored in component state and rendered directly in the UI, potentially
- * leaking sensitive internal details. All error paths now route through
- * getSafeErrorMessage() before being stored in state.
- * Fix: Sanitize error messages at the point of setError() in handleConnect.
- */
-
-/**
- * @fileoverview ConnectWalletModal — multi-network wallet connection modal.
- *
- * Supports the following wallet providers:
- *  - LOBSTR  (Stellar / XLM)
- *  - Argent  (Starknet / STRK)
- *  - MetaMask (EVM)
- *  - Phantom  (Solana / EVM)
- *  - Base Account / Coinbase Wallet (EVM)
- *  - Generic Starknet wallets (Braavos, etc.)
- *  - Generic EVM / browser-injected wallets
- *
- * ISSUE: #118 (Rich text descriptions in ConnectWalletModal)
- * Category: Feature Enhancement
- * Priority: Critical
- * Affected Area: ConnectWalletModal
- * Description: Integrated a custom RichTextEditor directly into the wallet
- * connection flow. This centralizes the "Business Description" draft logic
- * that was previously duplicated across SignUp and SignIn pages. The modal
- * now persists an unauthenticated draft in localStorage and automatically
- * syncs it to the user's profile upon successful connection.
- *
- * ISSUE: #124 (Advanced filtering and sorting in ConnectWalletModal)
- * Category: Feature Enhancement
- * Priority: High
- * Affected Area: ConnectWalletModal
- * Description: The wallet chooser now exposes explicit advanced filters and
- * sorting controls so users can quickly narrow large provider lists to
- * installed or recommended wallets and switch between alphabetical, network,
- * or recommended-first ordering.
- *
- * @module ConnectWalletModal
- */
-
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { X, ExternalLink, AlertCircle, ChevronLeft } from 'lucide-react';
-import { useDebounce } from '../../hooks/useDebounce';
 import Logo from './Logo';
 import { useLobstr } from '../../hooks/useLobstr';
 import {
     useAuthActions,
-    useAuthUser,
     useAuthWalletCatalog,
     useAuthWalletState,
 } from '../../context/AuthContext';
-import { useVirtualList } from '../../hooks/useVirtualList';
-import { useFocusTrap } from '../../hooks/useFocusTrap';
-import StagingBanner from './StagingBanner';
-const RichTextEditor = lazy(() => import('../forms/RichTextEditor'));
-import { STORAGE_PREFIX } from '../../config/env';
-import { normalizeRichTextHtml } from '../../utils/richText';
 
-// VIRTUALIZATION CONSTANTS
-const VIRTUALIZATION_THRESHOLD = 8;
-const WALLET_ROW_HEIGHT = 88;
-const WALLET_LIST_MAX_HEIGHT = 340;
-
-const DESCRIPTION_DRAFT_KEY = `${STORAGE_PREFIX}_business_description_draft`;
-
-// HELPERS FOR SENSITIVE DATA HIDING (Issue #204)
-function getSafeErrorMessage(msg) {
-    if (!msg) return 'Connection failed.';
-    const upperMsg = msg.toUpperCase ? msg.toUpperCase() : String(msg).toUpperCase();
-    if (upperMsg.includes('LOCKED')) return 'Wallet is locked.';
-    if (upperMsg.includes('REJECTED') || upperMsg.includes('CANCEL')) return 'Connection cancelled.';
-    return 'The connection was cancelled or failed. Please try again.';
-}
-
-function getSafeErrorDescription() {
-    return 'Your transaction signature was declined or the provider timed out. No sensitive details were leaked.';
-}
-
-// ICON COMPONENTS
+// Icon components
 function StellarIcon({ size = 20 }) {
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -139,365 +65,244 @@ function BaseIcon({ size = 20 }) {
     );
 }
 
+function getWalletIcon(w) {
+    if (w.iconUri) return <img src={w.iconUri} alt={w.name} className="w-6 h-6" />;
+    switch (w.id) {
+        case 'stellar': return <StellarIcon size={22} />;
+        case 'starknet': return <ArgentIcon size={20} />;
+        case 'metamask': return <MetaMaskIcon size={24} />;
+        case 'phantom': return <PhantomIcon size={24} />;
+        case 'base': return <BaseIcon size={24} />;
+        default: return <WalletIcon size={20} />;
+    }
+}
+
 function ConnectWalletModal({ isOpen, onClose, onConnect, connectWalletFn }) {
     const [connecting, setConnecting] = useState(null);
     const [error, setError] = useState(null);
-    const [filterNetwork, setFilterNetwork] = useState('all');
-    const [filterWalletType, setFilterWalletType] = useState('all');
-    const [showInstalledOnly, setShowInstalledOnly] = useState(false);
-    const [showRecommendedOnly, setShowRecommendedOnly] = useState(false);
-    const [sortBy, setSortBy] = useState('recommended');
+    const [view, setView] = useState('primary'); // 'primary' | 'secondary'
 
-    /**
-     * Search query for filtering wallets by name.
-     * searchQuery updates immediately (keeps the input responsive);
-     * debouncedSearchQuery delays the filter by 300 ms — #64.
-     */
-    const [searchQuery, setSearchQuery] = useState('');
-    const debouncedSearchQuery = useDebounce(searchQuery, 300);
-
-    const [view, setView] = useState('primary');
-
-    const { completeWalletLogin, disconnectAll, updateProfile } = useAuthActions();
+    const { completeWalletLogin, disconnectAll } = useAuthActions();
     const { wallet } = useAuthWalletState();
-    const user = useAuthUser();
     const { installed, availableWallets } = useAuthWalletCatalog();
-    const lobstrHook = useLobstr();
-
-    const [descriptionDraft, setDescriptionDraft] = useState(() => {
-        const saved = localStorage.getItem(DESCRIPTION_DRAFT_KEY) || "";
-        return normalizeRichTextHtml(user?.profileDescription || saved);
-    });
-
-    const modalRef = useFocusTrap({ isOpen, onClose, initialFocus: true, restoreFocus: true });
+    const lobstr = useLobstr();
 
     useEffect(() => {
         if (isOpen) {
             setConnecting(null);
             setError(null);
             setView('primary');
-            setSearchQuery('');
-            setFilterNetwork('all');
-            setFilterWalletType('all');
-            setShowInstalledOnly(false);
-            setShowRecommendedOnly(false);
-            setSortBy('recommended');
-            
-            // Sync draft with current user description if available
-            if (user?.profileDescription) {
-                setDescriptionDraft(normalizeRichTextHtml(user.profileDescription));
-            }
         }
-    }, [isOpen, user?.profileDescription]);
-
-    const handleDescriptionChange = (value) => {
-        const normalized = normalizeRichTextHtml(value);
-        setDescriptionDraft(normalized);
-        if (normalized) {
-            localStorage.setItem(DESCRIPTION_DRAFT_KEY, normalized);
-        } else {
-            localStorage.removeItem(DESCRIPTION_DRAFT_KEY);
-        }
-    };
-
-    const syncDescriptionOnConnect = async () => {
-        if (descriptionDraft) {
-            await updateProfile({ profileDescription: descriptionDraft });
-        }
-    };
-
-    // #64: filter uses debouncedSearchQuery so rapid keystrokes don't trigger
-    // a re-render of the wallet list on every character.
-    // #120: derive filtering/sorting from source metadata (no mutation) so
-    // search, network/type filters, and sort mode compose predictably.
-    const filteredAndSortedWallets = useMemo(() => availableWallets
-        .filter((w) => {
-            const isDiscoveredWallet = w.id.startsWith('discovered_');
-            if (filterWalletType === 'curated' && (w.isSecondary || isDiscoveredWallet)) return false;
-            if (filterWalletType === 'discovered' && !isDiscoveredWallet) return false;
-            if (filterWalletType === 'fallback' && !w.isSecondary) return false;
-            if (debouncedSearchQuery && !w.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) return false;
-            if (filterNetwork !== 'all' && w.network !== filterNetwork) return false;
-            if (showInstalledOnly && !w.isInstalled) return false;
-            if (showRecommendedOnly && !w.isRecommended) return false;
-            if (view === 'primary' && w.isSecondary && !debouncedSearchQuery && filterNetwork === 'all') return false;
-            if (view === 'secondary' && !w.isSecondary && !debouncedSearchQuery && filterNetwork === 'all') return false;
-            return true;
-        })
-        .sort((a, b) => {
-            const defaultPrioritySort = () => {
-                if (a.isInstalled && !b.isInstalled) return -1;
-                if (!a.isInstalled && b.isInstalled) return 1;
-                if (a.isRecommended && !b.isRecommended) return -1;
-                if (!a.isRecommended && b.isRecommended) return 1;
-                return a.name.localeCompare(b.name);
-            };
-
-            if (sortBy === 'alphabetical') return a.name.localeCompare(b.name);
-            if (sortBy === 'alphabetical_desc') return b.name.localeCompare(a.name);
-            if (sortBy === 'network') {
-                const networkSort = a.network.localeCompare(b.network);
-                return networkSort !== 0 ? networkSort : a.name.localeCompare(b.name);
-            }
-            if (sortBy === 'installed') {
-                if (a.isInstalled && !b.isInstalled) return -1;
-                if (!a.isInstalled && b.isInstalled) return 1;
-                return a.name.localeCompare(b.name);
-            }
-
-            return defaultPrioritySort();
-        }), [
-        availableWallets,
-        debouncedSearchQuery,
-        filterNetwork,
-        filterWalletType,
-        showInstalledOnly,
-        showRecommendedOnly,
-        sortBy,
-        view,
-    ]);
-
-    const hasActiveFilters = Boolean(
-        searchQuery ||
-        filterNetwork !== 'all' ||
-        filterWalletType !== 'all' ||
-        showInstalledOnly ||
-        showRecommendedOnly
-    );
-
-    const shouldVirtualize = filteredAndSortedWallets.length > VIRTUALIZATION_THRESHOLD;
-    const { scrollRef, virtualItems, topPadding, bottomPadding } = useVirtualList({
-        items: filteredAndSortedWallets,
-        itemHeight: WALLET_ROW_HEIGHT,
-    });
-
-    const walletsToRender = shouldVirtualize ? virtualItems.map(v => v.item) : filteredAndSortedWallets;
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
-    const getWalletIcon = (w) => {
-        if (w.iconUri) return <img src={w.iconUri} alt={w.name} className="w-6 h-6" />;
-        switch (w.id) {
-            case 'stellar': return <StellarIcon size={22} />;
-            case 'starknet': return <ArgentIcon size={20} />;
-            case 'metamask': return <MetaMaskIcon size={24} />;
-            case 'phantom': return <PhantomIcon size={24} />;
-            case 'base': return <BaseIcon size={24} />;
-            default: return <WalletIcon size={20} />;
-        }
-    };
+    const primaryWallets = availableWallets.filter((w) => !w.isSecondary);
+    const secondaryWallets = availableWallets.filter((w) => w.isSecondary);
+    const walletsToShow = view === 'primary' ? primaryWallets : secondaryWallets;
 
-    /**
-     * Initiates a wallet connection.
-     */
     const handleConnect = async (w) => {
         if (connecting) return;
+
         if (w.id === 'stellar') {
-            const result = await lobstrHook.connect();
+            const result = await lobstr.connect();
             if (result?.success) {
                 completeWalletLogin(result.address, 'stellar');
-                await syncDescriptionOnConnect();
                 if (onConnect) onConnect('stellar');
             } else if (result?.error) {
-                setError({ type: 'stellar', code: result.error === 'NOT_INSTALLED' ? 'not_installed' : 'failed', message: getSafeErrorMessage(result.error) });
+                const isNotInstalled = result.error === 'NOT_INSTALLED';
+                setError({ type: 'stellar', code: isNotInstalled ? 'not_installed' : 'failed', message: result.error });
             }
             return;
         }
 
         const type = w.id === 'starknet_generic' ? 'starknet_generic' : w.network;
-        const provider = w.rdns ? installed.discovered.find(p => p.info.rdns === w.rdns)?.provider : (w.provider || null);
+        const provider = w.rdns
+            ? installed.discovered?.find((p) => p.info.rdns === w.rdns)?.provider
+            : (w.provider || null);
 
         setConnecting(w.id);
         setError(null);
         try {
             const result = await connectWalletFn(type, provider);
             if (result.success) {
-                await syncDescriptionOnConnect();
                 if (onConnect) onConnect(type);
             } else if (result.error === 'not_installed') {
                 setError({ type: w.network, code: 'not_installed' });
                 setConnecting(null);
             } else {
-                setError({ type: w.network, code: 'failed', message: getSafeErrorMessage(result.error) });
+                setError({ type: w.network, code: 'failed', message: result.error });
                 setConnecting(null);
             }
         } catch (e) {
-            setError({ type: w.network, code: 'failed', message: getSafeErrorMessage(e.message) });
+            setError({ type: w.network, code: 'failed', message: e?.message });
             setConnecting(null);
         }
     };
 
+    const networkBg = (network) => {
+        if (network === 'stellar') return 'bg-blue-50';
+        if (network === 'starknet') return 'bg-[#FF875B]/10';
+        return 'bg-gray-100';
+    };
+
     return (
         <>
-            <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm transition-opacity" onClick={() => !connecting && onClose()} aria-hidden="true" />
-            <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="modal-title" className="fixed z-40 bottom-0 left-0 right-0 lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-full lg:max-w-md bg-white shadow-2xl rounded-t-2xl lg:rounded-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slide-up lg:animate-none lg:zoom-in">
-                <div className="lg:hidden w-10 h-1 bg-border rounded-full mx-auto my-3" />
-                <StagingBanner />
+            {/* Backdrop */}
+            <div
+                className="fixed inset-0 bg-black/40 z-50 backdrop-blur-sm transition-opacity"
+                onClick={() => !connecting && onClose()}
+                aria-hidden="true"
+            />
+
+            {/* Modal — bottom sheet on mobile, centered card on desktop */}
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cwm-title"
+                className="fixed z-50 bottom-0 left-0 right-0 lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-full lg:max-w-md bg-white shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slide-up lg:animate-none"
+            >
+                {/* Drag handle — mobile only */}
+                <div className="lg:hidden w-10 h-1 bg-border rounded-full mx-auto my-3 flex-shrink-0" />
+
                 <div className="flex-1 overflow-y-auto w-full">
-                    <div className="px-6 pt-2 pb-4 flex justify-between items-center relative border-b border-border/50">
-                        {view === 'primary' ? <Logo variant="light" className="h-6" /> : (
-                            <button onClick={() => setView('primary')} className="flex items-center gap-1.5 text-sm font-semibold text-t-primary hover:text-brand transition-colors">
+                    {/* Header */}
+                    <div className="px-6 pt-2 pb-4 flex justify-between items-center border-b border-border/50 flex-shrink-0">
+                        {view === 'primary' ? (
+                            <Logo variant="light" className="h-6" />
+                        ) : (
+                            <button
+                                onClick={() => setView('primary')}
+                                className="flex items-center gap-1.5 text-sm font-semibold text-t-primary hover:text-brand transition-colors"
+                            >
                                 <ChevronLeft size={18} /> Back
                             </button>
                         )}
-                        <button onClick={onClose} disabled={connecting !== null} className="text-t-muted hover:text-t-primary transition-colors disabled:opacity-50" aria-label="Close modal"><X size={20} /></button>
+                        <button
+                            onClick={onClose}
+                            disabled={connecting !== null}
+                            aria-label="Close modal"
+                            className="text-t-muted hover:text-t-primary transition-colors disabled:opacity-50"
+                        >
+                            <X size={20} />
+                        </button>
                     </div>
+
                     <div className="p-6">
-                        <h2 id="modal-title" className="text-xl font-bold text-t-primary mb-2">Connect your wallet</h2>
-                        <p className="text-sm text-t-muted mb-6">Choose how you'd like to connect to Tradazone.</p>
-                        <div className="mb-6 space-y-4">
-                            <div className="relative">
-                                <input type="text" placeholder="Search wallets..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-border rounded-xl text-sm focus:ring-2 focus:ring-brand/20 focus:border-brand outline-none transition-all" />
-                                <div className="absolute left-3 top-2.5 text-t-muted">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                                </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {['all', 'stellar', 'starknet', 'evm'].map((net) => (
-                                    <button key={net} onClick={() => setFilterNetwork(net)} className={`px-3 py-1 rounded-full text-xs font-semibold capitalize transition-all ${filterNetwork === net ? 'bg-brand text-white shadow-md shadow-brand/20' : 'bg-gray-100 text-t-muted hover:bg-gray-200'}`}>{net}</button>
-                                ))}
-                            </div>
-                            <div className="rounded-xl border border-border bg-gray-50/70 p-3 space-y-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <label htmlFor="wallet-sort" className="text-xs font-semibold uppercase tracking-wide text-t-muted">
-                                        Sort wallets
-                                    </label>
-                                    <select
-                                        id="wallet-sort"
-                                        aria-label="Sort wallets"
-                                        value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value)}
-                                        className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-t-primary outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
-                                    >
-                                        <option value="recommended">Recommended first</option>
-                                        <option value="installed">Installed first</option>
-                                        <option value="alphabetical">Name A-Z</option>
-                                        <option value="alphabetical_desc">Name Z-A</option>
-                                        <option value="network">Network</option>
-                                    </select>
-                                </div>
-                                <div className="flex items-center justify-between gap-3">
-                                    <label htmlFor="wallet-type" className="text-xs font-semibold uppercase tracking-wide text-t-muted">
-                                        Wallet type
-                                    </label>
-                                    <select
-                                        id="wallet-type"
-                                        aria-label="Wallet type"
-                                        value={filterWalletType}
-                                        onChange={(e) => setFilterWalletType(e.target.value)}
-                                        className="rounded-lg border border-border bg-white px-3 py-2 text-sm text-t-primary outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
-                                    >
-                                        <option value="all">All wallets</option>
-                                        <option value="curated">Curated wallets</option>
-                                        <option value="discovered">Discovered wallets</option>
-                                        <option value="fallback">Fallback options</option>
-                                    </select>
-                                </div>
-                                <div className="flex flex-wrap gap-3 text-sm text-t-primary">
-                                    <label className="inline-flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={showInstalledOnly}
-                                            onChange={(e) => setShowInstalledOnly(e.target.checked)}
-                                        />
-                                        Installed only
-                                    </label>
-                                    <label className="inline-flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={showRecommendedOnly}
-                                            onChange={(e) => setShowRecommendedOnly(e.target.checked)}
-                                        />
-                                        Recommended only
-                                    </label>
-                                </div>
-                                {hasActiveFilters && (
+                        <h2 id="cwm-title" className="text-xl font-bold text-t-primary mb-2">
+                            Connect your wallet
+                        </h2>
+                        <p className="text-sm text-t-muted mb-6">
+                            Choose how you'd like to connect to Tradazone to start accepting payments.
+                        </p>
+
+                        {/* Wallet list */}
+                        <div className="flex flex-col gap-3">
+                            {walletsToShow.map((w) => {
+                                const isThisConnecting = connecting === w.id || (w.id === 'stellar' && lobstr.isConnecting);
+                                const isDisabled = connecting !== null;
+                                return (
                                     <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSearchQuery('');
-                                            setFilterNetwork('all');
-                                            setFilterWalletType('all');
-                                            setShowInstalledOnly(false);
-                                            setShowRecommendedOnly(false);
-                                        }}
-                                        className="text-xs font-semibold text-brand hover:text-brand/80 transition-colors"
+                                        key={w.id}
+                                        onClick={() => handleConnect(w)}
+                                        disabled={isDisabled}
+                                        className={`w-full text-left p-4 border flex items-center justify-between transition-all outline-none
+                                            ${isThisConnecting
+                                                ? 'border-brand/40 bg-brand/5'
+                                                : isDisabled
+                                                    ? 'border-border/50 opacity-50'
+                                                    : 'border-border hover:border-brand/30 hover:bg-brand/5'
+                                            }`}
                                     >
-                                        Clear filters
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {view === 'primary' && !debouncedSearchQuery && (
-                            <div className="mb-6 animate-fade-in min-h-[200px]">
-                                <Suspense fallback={
-                                    <div className="flex flex-col gap-1.5 animate-pulse">
-                                        <div className="h-4 w-32 bg-gray-200 rounded" />
-                                        <div className="h-36 w-full bg-gray-100 rounded-lg border border-border" />
-                                    </div>
-                                }>
-                                    <RichTextEditor
-                                        id="modal-business-description"
-                                        label="Business description draft"
-                                        value={descriptionDraft}
-                                        onChange={handleDescriptionChange}
-                                        placeholder="Describe your business context before connecting..."
-                                        hint="This description will be synced to your profile after connection."
-                                    />
-                                </Suspense>
-                            </div>
-                        )}
-
-                        <div ref={shouldVirtualize ? scrollRef : undefined} data-testid="wallet-list-container" style={shouldVirtualize ? { maxHeight: WALLET_LIST_MAX_HEIGHT, overflowY: 'auto' } : undefined}>
-                            {shouldVirtualize && <div style={{ height: topPadding }} aria-hidden="true" />}
-                            <div className="flex flex-col gap-3">
-                                {walletsToRender.map((w) => (
-                                    <button data-testid={`wallet-option-${w.id}`} key={w.id} onClick={() => handleConnect(w)} disabled={connecting !== null || (w.id === 'stellar' && lobstrHook.isConnecting)} className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all outline-none ${connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? 'border-brand/40 bg-brand/5' : connecting !== null ? 'border-border/50 opacity-50' : 'border-border hover:border-brand/30 hover:bg-brand/5'}`}>
                                         <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${w.network === 'stellar' ? 'bg-blue-50' : w.network === 'starknet' ? 'bg-[#FF875B]/10' : 'bg-gray-100'}`}>{getWalletIcon(w)}</div>
+                                            <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 ${networkBg(w.network)}`}>
+                                                {getWalletIcon(w)}
+                                            </div>
                                             <div>
-                                                <div className="font-semibold text-t-primary flex items-center gap-2">{w.name} {w.isRecommended && <span className="text-[10px] uppercase font-bold tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Recommended</span>}</div>
+                                                <div className="font-semibold text-t-primary flex items-center gap-2">
+                                                    {w.name}
+                                                    {w.isRecommended && (
+                                                        <span className="text-[10px] uppercase font-bold tracking-wide bg-blue-100 text-blue-700 px-2 py-0.5">
+                                                            Recommended
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-xs text-t-muted">{w.networkName}</div>
                                             </div>
                                         </div>
-                                        {connecting === w.id || (w.id === 'stellar' && lobstrHook.isConnecting) ? <span className="w-4 h-4 border-2 border-brand/30 border-t-brand rounded-full animate-spin" /> : (w.isInstalled || w.rdns) && <span className="text-[10px] uppercase font-bold tracking-wide text-green-600 bg-green-50 px-2 py-1 rounded-md">Installed</span>}
+                                        {isThisConnecting ? (
+                                            <span className="w-4 h-4 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
+                                        ) : (w.isInstalled || w.rdns) ? (
+                                            <span className="text-[10px] uppercase font-bold tracking-wide text-green-600 bg-green-50 px-2 py-1">
+                                                Installed
+                                            </span>
+                                        ) : null}
                                     </button>
-                                ))}
-                            </div>
-                            {shouldVirtualize && <div style={{ height: bottomPadding }} aria-hidden="true" />}
+                                );
+                            })}
                         </div>
 
-                        {filteredAndSortedWallets.length === 0 && <div className="text-center py-8 text-t-muted text-sm italic">No wallets found matching your search.</div>}
-
-                        {view === 'primary' && !debouncedSearchQuery && filterNetwork === 'all' && (
-                            <button onClick={() => setView('secondary')} disabled={connecting !== null} className="w-full mt-2 text-center text-sm font-semibold text-t-secondary hover:text-brand transition-colors p-3 rounded-lg border border-transparent hover:border-border hover:bg-gray-50 disabled:opacity-50">View more options</button>
+                        {walletsToShow.length === 0 && (
+                            <p className="text-center py-8 text-t-muted text-sm">No wallets available.</p>
                         )}
 
+                        {/* View more / back */}
+                        {view === 'primary' && secondaryWallets.length > 0 && (
+                            <button
+                                onClick={() => setView('secondary')}
+                                disabled={connecting !== null}
+                                className="w-full mt-4 text-center text-sm font-semibold text-t-secondary hover:text-brand transition-colors p-3 border border-transparent hover:border-border hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                View more options
+                            </button>
+                        )}
+
+                        {/* Error */}
                         {error?.code === 'not_installed' && (
-                            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-sm text-red-800 animate-fade-in">
-                                <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-red-500" />
+                            <div className="mt-4 p-3 bg-error-bg border border-error/20 flex items-start gap-2 text-sm text-error">
+                                <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
                                 <div>
-                                    <p className="font-medium">{error.type === 'stellar' ? 'LOBSTR is not installed.' : error.type === 'starknet' ? 'Argent is not installed.' : error.type === 'evm' ? 'EVM wallet not detected in browser.' : 'Wallet is not installed.'}</p>
+                                    <p className="font-medium">
+                                        {error.type === 'stellar' ? 'LOBSTR is not installed.' :
+                                         error.type === 'starknet' ? 'Argent X is not installed.' :
+                                         'Wallet extension not detected.'}
+                                    </p>
                                     {(error.type === 'stellar' || error.type === 'starknet') && (
-                                        <a href={error.type === 'stellar' ? 'https://lobstr.co/' : 'https://www.argent.xyz/argent-x/'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold underline mt-1">Install extension <ExternalLink size={12} /></a>
+                                        <a
+                                            href={error.type === 'stellar' ? 'https://lobstr.co/' : 'https://www.argent.xyz/argent-x/'}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 font-semibold underline mt-1"
+                                        >
+                                            Install extension <ExternalLink size={12} />
+                                        </a>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {error?.code === 'failed' && (
-                            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-sm text-red-800 animate-fade-in">
-                                <AlertCircle size={16} className="flex-shrink-0 mt-0.5 text-red-500" />
+                            <div className="mt-4 p-3 bg-error-bg border border-error/20 flex items-start gap-2 text-sm text-error">
+                                <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
                                 <div>
-                                    <p className="font-medium">{getSafeErrorMessage(error.message)}</p>
-                                    <div className="text-xs mt-1 opacity-80">{getSafeErrorDescription(error.message)}</div>
+                                    <p className="font-medium">
+                                        {error.message === 'LOCKED' ? 'Wallet is locked — open the extension and enter your password.' :
+                                         error.message === 'ACCESS_DENIED' ? 'Access denied — allow this site in your wallet extension.' :
+                                         'Connection failed. Please try again.'}
+                                    </p>
                                 </div>
                             </div>
                         )}
 
-                        {wallet.isConnected && (
-                            <button onClick={async () => { await disconnectAll(); onClose(); }} disabled={connecting !== null} className="mt-5 w-full text-center text-sm font-semibold text-red-500 hover:text-red-700 transition-colors p-3 rounded-lg border border-transparent hover:border-red-100 hover:bg-red-50 disabled:opacity-50">Disconnect all wallets</button>
+                        {/* Disconnect */}
+                        {wallet?.isConnected && (
+                            <button
+                                onClick={async () => { await disconnectAll(); onClose(); }}
+                                disabled={connecting !== null}
+                                className="mt-5 w-full text-center text-sm font-semibold text-error hover:text-error/80 transition-colors p-3 border border-transparent hover:border-error/20 hover:bg-error-bg disabled:opacity-50"
+                            >
+                                Disconnect all wallets
+                            </button>
                         )}
                     </div>
                 </div>

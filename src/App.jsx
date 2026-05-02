@@ -57,6 +57,7 @@ const InvoiceList = lazy(() => import('./features/invoices/pages/InvoiceList'));
 const CreateInvoice = lazy(() => import('./features/invoices/pages/CreateInvoice'));
 const InvoiceDetail = lazy(() => import('./features/invoices/pages/InvoiceDetail'));
 const InvoicePreview = lazy(() => import('./features/invoices/pages/InvoicePreview'));
+const InvoicePayment = lazy(() => import('./features/invoices/pages/InvoicePayment'));
 const ItemsList = lazy(() => import('./features/items/pages/ItemsList'));
 const AddItem = lazy(() => import('./features/items/pages/AddItem'));
 const ItemDetail = lazy(() => import('./features/items/pages/ItemDetail'));
@@ -116,6 +117,24 @@ function App() {
             <Route path="/signin" element={<SignIn />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/invoice/:id" element={<InvoicePreview />} />
+            <Route
+              path="/pay/invoice/:invoiceId"
+              element={
+                <Suspense
+                  fallback={
+                    <div
+                      className="min-h-screen bg-brand"
+                      role="status"
+                      aria-live="polite"
+                      aria-busy="true"
+                      aria-label="Loading payment page"
+                    />
+                  }
+                >
+                  <InvoicePayment />
+                </Suspense>
+              }
+            />
 
             {/* Protected routes — require authentication */}
             <Route

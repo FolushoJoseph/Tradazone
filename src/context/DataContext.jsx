@@ -77,18 +77,20 @@ function save(key, data) {
   localStorage.setItem(key, JSON.stringify(data));
 }
 
-export function DataProvider({ children }) {
-  useEffect(() => {
-    localStorage.removeItem(KEYS.customers);
-    localStorage.removeItem(KEYS.invoices);
-    localStorage.removeItem(KEYS.checkouts);
-    localStorage.removeItem(KEYS.items);
-  }, []);
+function loadFromStorage(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
-  const [customers, setCustomers] = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [checkouts, setCheckouts] = useState([]);
-  const [items, setItems] = useState([]);
+export function DataProvider({ children }) {
+  const [customers, setCustomers] = useState(() => loadFromStorage(KEYS.customers) || []);
+  const [invoices, setInvoices] = useState(() => loadFromStorage(KEYS.invoices) || []);
+  const [checkouts, setCheckouts] = useState(() => loadFromStorage(KEYS.checkouts) || []);
+  const [items, setItems] = useState(() => loadFromStorage(KEYS.items) || []);
 
   const invoiceCountRef = useRef(0);
   const checkoutCountRef = useRef(0);
@@ -214,6 +216,14 @@ export function DataProvider({ children }) {
           dueDate: toUtcMidnightIso(data.dueDate),
           createdAt: new Date().toISOString(),
           items: resolvedItems,
+          sentAt: null,
+          paidAt: null,
+          emailStatus: 'pending',
+          paymentAddress: '',
+          txHash: '',
+          txNetwork: '',
+          txAmount: '',
+          txCurrency: ''
         };
 
         setInvoices((prev) => {
@@ -228,6 +238,66 @@ export function DataProvider({ children }) {
       }
     },
     [customers, items, releaseOperation],
+  );
+
+  const sendInvoice = useCallback(
+    (invoiceId) => {
+      setInvoices((prev) => {
+        const next = prev.map((inv) =>
+          inv.id === invoiceId
+            ? { ...inv, status: 'sent', sentAt: new Date().toISOString(), emailStatus: 'sent' }
+            : inv
+        );
+        save(KEYS.invoices, next);
+        return next;
+      });
+    },
+    []
+  );
+
+  const markInvoicePaid = useCallback(
+    (invoiceId, txDetails) => {
+      const paidInvoice = invoices.find((inv) => inv.id === invoiceId);
+      const added = parseFloat(paidInvoice?.amount.replace(/,/g, '') || '0') || 0;
+
+      setInvoices((prev) => {
+        const next = prev.map((inv) =>
+          inv.id === invoiceId
+            ? { 
+                ...inv, 
+                status: 'paid', 
+                paidAt: new Date().toISOString(),
+                txHash: txDetails.hash || '',
+                txNetwork: txDetails.network || '',
+                txAmount: txDetails.amount || '',
+                txCurrency: txDetails.currency || ''
+              }
+            : inv
+        );
+        save(KEYS.invoices, next);
+        return next;
+      });
+
+      if (paidInvoice && paidInvoice.customerId) {
+        setCustomers((prev) => {
+          const next = prev.map((c) => {
+            if (c.id !== paidInvoice.customerId) return c;
+            const prevSpent = parseFloat(c.totalSpent.replace(/,/g, '')) || 0;
+            const updatedTotal = safeAdd(prevSpent, added, 2);
+            return {
+              ...c,
+              totalSpent: updatedTotal.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 2,
+              }),
+            };
+          });
+          save(KEYS.customers, next);
+          return next;
+        });
+      }
+    },
+    [invoices]
   );
 
   const addCheckout = useCallback(
@@ -358,6 +428,8 @@ export function DataProvider({ children }) {
       addItem,
       deleteItems,
       addInvoice,
+      sendInvoice,
+      markInvoicePaid,
       addCheckout,
       markCheckoutPaid,
       recordCheckoutView,
@@ -372,6 +444,8 @@ export function DataProvider({ children }) {
       addItem,
       deleteItems,
       addInvoice,
+      sendInvoice,
+      markInvoicePaid,
       addCheckout,
       markCheckoutPaid,
       recordCheckoutView,

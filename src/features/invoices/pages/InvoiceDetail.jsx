@@ -33,7 +33,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Send, Download, Edit, Eye, Search, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Send, Download, Edit, Eye, Search, FileSpreadsheet, X, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import Button from "../../../components/forms/Button";
 import StatusBadge from "../../../components/tables/StatusBadge";
 import InvoiceLayout from "../components/InvoiceLayout";
@@ -42,6 +42,7 @@ import { loadSession, useAuth } from "../../../context/AuthContext";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { formatUtcDate } from "../../../utils/date";
 import { getPlainTextFromRichText, normalizeRichTextHtml } from "../../../utils/richText";
+import { sendInvoiceToCustomer } from "../../../services/emailService";
 
 function escapeCsvField(value) {
   const normalized = value == null ? "" : String(value);
@@ -87,7 +88,7 @@ function InvoiceDetail() {
   const invoiceRef = useRef(null);
   const pdfRef = useRef(null);
   const { user } = useAuth();
-  const { invoices, customers } = useData();
+  const { invoices, customers, sendInvoice } = useData();
 
   const invoice = invoices.find((inv) => inv.id === id);
   const customer = customers.find((c) => c.id === invoice?.customerId);
@@ -123,6 +124,48 @@ function InvoiceDetail() {
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 300);
+
+  // Send modal state
+  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [sendEmail, setSendEmail] = useState('');
+  const [sendStatus, setSendStatus] = useState('idle'); // idle | loading | success | error
+  const [sendError, setSendError] = useState('');
+
+  const handleSendInvoice = async () => {
+    if (!sendEmail.trim()) { setSendError('Customer email is required.'); return; }
+    setSendStatus('loading');
+    setSendError('');
+    try {
+      const result = await sendInvoiceToCustomer({
+        id: sanitizedInvoice.id,
+        customer: sanitizedInvoice.customer,
+        customerEmail: sendEmail.trim(),
+        amount: sanitizedInvoice.amount,
+        currency: sanitizedInvoice.currency,
+        dueDate: sanitizedInvoice.dueDate,
+        paymentLink: '',
+        senderName: 'Tradazone',
+      });
+      if (result.success) {
+        sendInvoice(sanitizedInvoice.id);
+        setSendStatus('success');
+      } else {
+        setSendStatus('error');
+        setSendError(result.error || 'Email delivery failed.');
+      }
+    } catch (err) {
+      setSendStatus('error');
+      setSendError(err?.message || 'Unexpected error.');
+    }
+  };
+
+  const closeSendModal = () => {
+    if (sendStatus === 'loading') return;
+    setIsSendModalOpen(false);
+    setSendStatus('idle');
+    setSendError('');
+    setSendEmail(sanitizedCustomer?.email || '');
+  };
 
   /**
    * Filtered items list - Memoized to prevent recalculation on every render
@@ -174,15 +217,9 @@ function InvoiceDetail() {
     URL.revokeObjectURL(downloadUrl);
   };
 
-  if (!invoice) return <div className="p-6">Invoice not found</div>;
-
-  const total = sanitizedInvoice.items.reduce(
-    (acc, item) => acc + (parseFloat(item.price) || 0) * (Number(item.quantity) || 0),
-    0
-  );
-
+  // CRITICAL: useMemo must come before any early return to satisfy React's Rules of Hooks
   const pdfLayout = useMemo(
-    () => (
+    () => sanitizedInvoice && (
       <InvoiceLayout
         ref={pdfRef}
         invoice={sanitizedInvoice}
@@ -191,6 +228,13 @@ function InvoiceDetail() {
       />
     ),
     [sanitizedInvoice, sanitizedCustomer, user],
+  );
+
+  if (!invoice) return <div className="p-6">Invoice not found</div>;
+
+  const total = sanitizedInvoice.items.reduce(
+    (acc, item) => acc + (parseFloat(item.price) || 0) * (Number(item.quantity) || 0),
+    0
   );
 
   return (
@@ -224,7 +268,12 @@ function InvoiceDetail() {
           <Button variant="secondary" icon={FileSpreadsheet} onClick={handleExportCsv}>
             Export to CSV
           </Button>
-          <Button variant="secondary" icon={Send}>
+          <Button variant="secondary" icon={Send} onClick={() => {
+            setSendEmail(sanitizedCustomer?.email || '');
+            setSendStatus('idle');
+            setSendError('');
+            setIsSendModalOpen(true);
+          }}>
             Send
           </Button>
           <Button variant="primary" icon={Edit}>
@@ -311,7 +360,7 @@ function InvoiceDetail() {
                 </tr>
               )}
             </tbody>
-            <tfoot className="bg-gray-50/50">
+            <tfoot className="bg-page">
               <tr>
                 <td colSpan="3" className="px-6 py-4 text-right font-medium">Grand Total</td>
                 <td className="px-6 py-4 text-right font-bold text-lg text-brand">
@@ -322,6 +371,113 @@ function InvoiceDetail() {
           </table>
         </div>
       </div>
+
+      {/* ── Send Invoice Modal (inline) ── */}
+      {isSendModalOpen && (
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black/30 z-[90]" onClick={closeSendModal} />
+
+          {/* Panel — bottom sheet on mobile, centered on desktop */}
+          <div className="fixed z-[95] bottom-0 left-0 right-0 lg:bottom-auto lg:left-1/2 lg:top-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-full lg:max-w-[480px] bg-white shadow-2xl flex flex-col overflow-hidden">
+
+            {/* Mobile drag handle */}
+            <div className="lg:hidden w-10 h-1 bg-border-medium rounded-full mx-auto my-3" />
+
+            {/* Header */}
+            <div className="px-6 pt-2 pb-4 flex items-center justify-between border-b border-border">
+              <div className="flex items-center gap-2">
+                <Mail size={18} className="text-brand" />
+                <span className="text-base font-semibold text-t-primary">Send Invoice</span>
+              </div>
+              <button
+                onClick={closeSendModal}
+                disabled={sendStatus === 'loading'}
+                className="text-t-muted hover:text-t-primary disabled:opacity-40 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6">
+              {sendStatus === 'success' ? (
+                /* ── Success state ── */
+                <div className="flex flex-col items-center gap-3 py-2 text-center">
+                  <div className="w-12 h-12 bg-success/10 flex items-center justify-center">
+                    <CheckCircle size={26} className="text-success" />
+                  </div>
+                  <p className="text-sm text-t-secondary">
+                    <strong className="text-t-primary">{sanitizedInvoice.id}</strong> was emailed to{' '}
+                    <strong className="text-t-primary">{sendEmail}</strong>.
+                  </p>
+                  <Button variant="primary" className="w-full mt-1" onClick={closeSendModal}>
+                    Done
+                  </Button>
+                </div>
+              ) : (
+                /* ── Form state ── */
+                <>
+                  {/* Invoice summary row */}
+                  <div className="bg-page border border-border p-3 mb-5 flex justify-between text-sm">
+                    <span className="text-t-muted">
+                      Invoice:{' '}
+                      <strong className="text-t-primary">{sanitizedInvoice.id}</strong>
+                    </span>
+                    <span className="font-semibold text-brand">
+                      {sanitizedInvoice.amount} {sanitizedInvoice.currency}
+                    </span>
+                  </div>
+
+                  {/* Email label */}
+                  <label className="block text-xs font-medium text-t-secondary uppercase tracking-wide mb-1.5">
+                    Customer email
+                  </label>
+
+                  {/* Email input */}
+                  <input
+                    type="email"
+                    value={sendEmail}
+                    onChange={(e) => { setSendEmail(e.target.value); setSendError(''); }}
+                    placeholder="customer@email.com"
+                    disabled={sendStatus === 'loading'}
+                    className="w-full px-3 py-2.5 text-sm text-t-primary bg-white border border-border focus:border-brand focus:outline-none mb-4 disabled:bg-page disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                  />
+
+                  {/* Error message */}
+                  {sendError && (
+                    <div className="flex items-start gap-2 p-3 bg-error/10 border border-error/20 text-sm text-error mb-4">
+                      <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+                      <span>{sendError}</span>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-3">
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={closeSendModal}
+                      disabled={sendStatus === 'loading'}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleSendInvoice}
+                      loading={sendStatus === 'loading'}
+                      icon={Send}
+                    >
+                      {sendStatus === 'loading' ? 'Sending…' : 'Send Invoice'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

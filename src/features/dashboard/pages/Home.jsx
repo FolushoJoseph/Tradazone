@@ -18,8 +18,8 @@ import WelcomeModal from '../../../components/ui/WelcomeModal';
 
 function Home() {
     const { wallet } = useAuth();
-    const { transactions, dashboardStats } = useData();
-    const recentTransactions = transactions.slice(0, 5);
+    const { transactions = [], dashboardStats = {} } = useData();
+    const recentTransactions = (transactions || []).slice(0, 5);
 
     return (
         <div className="max-w-[1100px]">

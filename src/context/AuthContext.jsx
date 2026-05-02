@@ -145,6 +145,8 @@ const AuthActionsContext = createContext(null);
 const AuthWalletStateContext = createContext(null);
 const AuthWalletCatalogContext = createContext(null);
 
+const isDevBypass = import.meta.env.DEV;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -297,7 +299,22 @@ export function loadSession() {
         // 1. Check sensitive ephemeral session in sessionStorage
         const rawSession = sessionStorage.getItem(SESSION_KEY);
         if (!rawSession) {
-            // No active session in sessionStorage — clear localStorage profile to avoid stale data
+            // No active session in sessionStorage
+            if (isDevBypass) {
+                return {
+                    id: "0xDEV_BYPASS_ADDRESS",
+                    name: "Developer (Bypass)",
+                    email: "dev@example.com",
+                    avatar: null,
+                    isAuthenticated: true,
+                    walletAddress: "0xDEV_BYPASS_ADDRESS",
+                    walletType: "evm",
+                    phone: "",
+                    company: "",
+                    address: "",
+                    profileDescription: "",
+                };
+            }
             try {
                 localStorage.removeItem(SESSION_KEY);
             } catch (e) {
@@ -410,13 +427,13 @@ function clearSession() {
  * @type {UserData}
  */
 const EMPTY_USER = {
-    id: null,
-    name: "",
-    email: "",
+    id: isDevBypass ? "0xDEV_BYPASS_ADDRESS" : null,
+    name: isDevBypass ? "Developer (Bypass)" : "",
+    email: isDevBypass ? "dev@example.com" : "",
     avatar: null,
-    isAuthenticated: false,
-    walletAddress: null,
-    walletType: null,
+    isAuthenticated: isDevBypass,
+    walletAddress: isDevBypass ? "0xDEV_BYPASS_ADDRESS" : null,
+    walletType: isDevBypass ? "evm" : null,
     phone: "",
     company: "",
     address: "",

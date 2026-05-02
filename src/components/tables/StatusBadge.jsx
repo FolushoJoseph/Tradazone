@@ -4,6 +4,7 @@ const statusConfig = {
     pending: { label: 'Pending', classes: 'bg-info-bg text-info' },
     overdue: { label: 'Overdue', classes: 'bg-error-bg text-error' },
     active: { label: 'Active', classes: 'bg-success-bg text-success' },
+    sent: { label: 'Sent', classes: 'bg-info-bg text-info' },
     inactive: { label: 'Inactive', classes: 'bg-gray-100 text-t-muted' },
     completed: { label: 'Completed', classes: 'bg-success-bg text-success' },
     cancelled: { label: 'Cancelled', classes: 'bg-error-bg text-error' },
