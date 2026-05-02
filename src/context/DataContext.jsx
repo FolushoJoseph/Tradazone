@@ -114,6 +114,29 @@ export function DataProvider({ children }) {
         [customers, items, invoices]
     );
 
+    // ---------- Invoice actions ----------
+    const sendInvoice = useCallback((invoiceId) => {
+        setInvoices((prev) => {
+            const next = prev.map((inv) =>
+                inv.id === invoiceId ? { ...inv, status: 'sent' } : inv
+            );
+            save(KEYS.invoices, next);
+            return next;
+        });
+    }, []);
+
+    const markInvoicePaid = useCallback((invoiceId, txDetails) => {
+        setInvoices((prev) => {
+            const next = prev.map((inv) =>
+                inv.id === invoiceId
+                    ? { ...inv, status: 'paid', txHash: txDetails?.hash || null, paidAt: new Date().toISOString() }
+                    : inv
+            );
+            save(KEYS.invoices, next);
+            return next;
+        });
+    }, []);
+
     // ---------- Checkouts ----------
     const addCheckout = useCallback(
         (data) => {
@@ -152,6 +175,8 @@ export function DataProvider({ children }) {
                 addCustomer,
                 addItem,
                 addInvoice,
+                sendInvoice,
+                markInvoicePaid,
                 addCheckout,
             }}
         >
