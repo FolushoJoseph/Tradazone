@@ -1,18 +1,10 @@
-import { forwardRef, memo } from 'react';
+import { forwardRef } from 'react';
 import InvoiceHeader from './InvoiceHeader';
 import InvoiceTable from './InvoiceTable';
 import InvoiceSummary from './InvoiceSummary';
 import InvoiceFooter from './InvoiceFooter';
-import { formatUtcDate } from '../../../utils/date';
 
-/**
- * InvoiceLayout — PDF-ready invoice layout component.
- * 
- * ISSUE #73 FIX: Wrapped with React.memo to prevent N+1 redundant renders.
- * This component is used for PDF generation and should only re-render when
- * invoice, customer, or sender props change.
- */
-const InvoiceLayout = memo(forwardRef(function InvoiceLayout({ invoice, customer, sender }, ref) {
+const InvoiceLayout = forwardRef(function InvoiceLayout({ invoice, customer, sender }, ref) {
     const subtotal = invoice.items.reduce(
         (sum, item) => sum + parseFloat(item.price) * item.quantity,
         0
@@ -23,7 +15,7 @@ const InvoiceLayout = memo(forwardRef(function InvoiceLayout({ invoice, customer
     return (
         <div
             ref={ref}
-            className="w-full max-w-[794px] min-h-[1123px] bg-white mx-auto flex flex-col print:w-[794px]"
+            className="w-[794px] min-h-[1123px] bg-white mx-auto flex flex-col"
             style={{ padding: '48px 56px' }}
         >
             {/* Header */}
@@ -33,11 +25,11 @@ const InvoiceLayout = memo(forwardRef(function InvoiceLayout({ invoice, customer
             <div className="grid grid-cols-3 border-t border-gray-200 py-4 mb-6">
                 <div>
                     <span className="block text-xs font-bold text-t-primary mb-1">Invoice date:</span>
-                    <span className="text-sm text-t-muted">{formatUtcDate(invoice.createdAt)}</span>
+                    <span className="text-sm text-t-muted">{invoice.createdAt}</span>
                 </div>
                 <div>
                     <span className="block text-xs font-bold text-t-primary mb-1">Due date:</span>
-                    <span className="text-sm text-t-muted">{formatUtcDate(invoice.dueDate)}</span>
+                    <span className="text-sm text-t-muted">{invoice.dueDate}</span>
                 </div>
                 <div>
                     <span className="block text-xs font-bold text-brand mb-1">Invoice number:</span>
@@ -80,11 +72,11 @@ const InvoiceLayout = memo(forwardRef(function InvoiceLayout({ invoice, customer
             <div className="mt-auto">
                 <InvoiceFooter
                     notes={sender?.name || 'Sender'}
-                    paymentLink={`${window.location.origin}/Tradazone/pay/invoice/${invoice.id}`}
+                    paymentLink={`https://pay.tradazone.com/${invoice.id}`}
                 />
             </div>
         </div>
     );
-}));
+});
 
 export default InvoiceLayout;

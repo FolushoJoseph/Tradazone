@@ -21,12 +21,6 @@ function PaymentSettings() {
 
     const isStellar = walletType === 'stellar';
 
-    const [merchantWallets, setMerchantWallets] = useState({
-        eth: '0x1234567890123456789012345678901234567890',
-        strk: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        xlm: 'GABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABC'
-    });
-
     const handleSwitchNetwork = async () => {
         await disconnectWallet();
         navigate('/signin');
@@ -71,47 +65,11 @@ function PaymentSettings() {
                 </div>
             </div>
 
-            <div className={`p-5 rounded-card mb-5 ${isStellar ? 'bg-blue-50 text-blue-600' : 'bg-brand-bg text-brand'}`}>
+            <div className={`p-5 rounded-card ${isStellar ? 'bg-blue-50 text-blue-600' : 'bg-brand-bg text-brand'}`}>
                 <p className="text-sm">
                     <strong>{isStellar ? 'Stellar Network' : 'Starknet Network'}</strong><br />
                     Payments are processed on the {isStellar ? 'Stellar' : 'Starknet'} network. Make sure your wallet is connected to receive payments.
                 </p>
-            </div>
-
-            <div className="p-5 bg-white border border-border rounded-card mb-5">
-                <h3 className="text-sm font-semibold mb-4">Merchant Receiving Wallets</h3>
-                <p className="text-xs text-t-muted mb-4">These addresses will be displayed on invoices for customers to pay.</p>
-                
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-medium text-t-primary mb-1">Ethereum (ETH)</label>
-                        <input 
-                            type="text" 
-                            className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                            value={merchantWallets.eth}
-                            onChange={(e) => setMerchantWallets({ ...merchantWallets, eth: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-t-primary mb-1">Starknet (STRK)</label>
-                        <input 
-                            type="text" 
-                            className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                            value={merchantWallets.strk}
-                            onChange={(e) => setMerchantWallets({ ...merchantWallets, strk: e.target.value })}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-t-primary mb-1">Stellar (XLM)</label>
-                        <input 
-                            type="text" 
-                            className="w-full px-3 py-2 border border-border rounded-lg text-sm"
-                            value={merchantWallets.xlm}
-                            onChange={(e) => setMerchantWallets({ ...merchantWallets, xlm: e.target.value })}
-                        />
-                    </div>
-                    <Button variant="primary" className="mt-2">Save Addresses</Button>
-                </div>
             </div>
 
             <ConnectWalletModal

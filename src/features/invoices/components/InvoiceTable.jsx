@@ -1,13 +1,4 @@
-import { memo } from 'react';
-
-/**
- * InvoiceTable — displays invoice line items in a grid layout.
- * 
- * ISSUE #73 FIX: Wrapped with React.memo to prevent N+1 redundant renders.
- * This component only needs to re-render when the items array changes,
- * not when parent InvoiceDetail state updates (e.g., search term changes).
- */
-const InvoiceTable = memo(function InvoiceTable({ items = [] }) {
+function InvoiceTable({ items = [], currency = 'STRK' }) {
     return (
         <div className="mb-8">
             {/* Table Header */}
@@ -49,6 +40,6 @@ const InvoiceTable = memo(function InvoiceTable({ items = [] }) {
                 ))}
         </div>
     );
-});
+}
 
 export default InvoiceTable;
