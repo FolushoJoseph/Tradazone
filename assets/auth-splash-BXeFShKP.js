@@ -1,0 +1,1 @@
+var e=`/Tradazone/assets/auth-splash-CAuWrTUu.svg`;export{e as t};
