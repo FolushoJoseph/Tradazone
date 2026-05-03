@@ -35,12 +35,6 @@ jobs:
 
       - name: Build for production
         run: npm run build
-        env:
-          # EmailJS configuration (add these as GitHub repository secrets)
-          VITE_EMAILJS_SERVICE_ID: ${{ secrets.VITE_EMAILJS_SERVICE_ID }}
-          VITE_EMAILJS_PUBLIC_KEY: ${{ secrets.VITE_EMAILJS_PUBLIC_KEY }}
-          VITE_EMAILJS_TEMPLATE_INVOICE: ${{ secrets.VITE_EMAILJS_TEMPLATE_INVOICE }}
-          VITE_EMAILJS_TEMPLATE_RECEIPT: ${{ secrets.VITE_EMAILJS_TEMPLATE_RECEIPT }}
 
       - name: Upload build artifact
         uses: actions/upload-pages-artifact@v3
