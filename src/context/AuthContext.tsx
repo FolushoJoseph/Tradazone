@@ -704,7 +704,7 @@ export function AuthProvider({ children }) {
 
             return userData;
         });
-    }, [authenticateWithSupabase]);
+    }, []); // authenticateWithSupabase omitted — stable ref (empty deps), avoids TDZ in bundle
 
     // ── Standard auth ────────────────────────────────────────────────────────
 
@@ -965,7 +965,7 @@ export function AuthProvider({ children }) {
             setConnectingWalletType(null);
             return { success: true };
         }
-    }, [connectingWalletType, logout, authenticateWithSupabase]);
+    }, [connectingWalletType, logout]); // authenticateWithSupabase omitted — stable ref, avoids TDZ
 
     // ── Stellar (LOBSTR via AuthContext — alternative path) ─────────────────
 
