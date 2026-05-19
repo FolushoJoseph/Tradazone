@@ -19,6 +19,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@lobstrco/signer-extension-api": "^2.0.0",
     "@sentry/react": "^10.53.1",
     "@supabase/supabase-js": "^2.105.4",
